@@ -3,7 +3,7 @@ FROM node:18-alpine
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY ui/package*.json ./
 
 # Install pnpm
 RUN npm install -g pnpm
@@ -11,8 +11,8 @@ RUN npm install -g pnpm
 # Install dependencies
 RUN pnpm install
 
-# Copy source code
-COPY . .
+# Copy UI source code
+COPY ui/ .
 
 # Expose port
 EXPOSE 3000

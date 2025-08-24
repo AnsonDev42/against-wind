@@ -41,3 +41,5 @@ pythonpath = ["."]
 addopts = "-v --tb=short"
 
 
+[tool.ruff]
+exclude = [".venv",".py"]

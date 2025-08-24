@@ -8,6 +8,8 @@ This is a mono-repo containing:
 
 - **`api/`** - FastAPI backend with wind analysis engine
 - **`ui/`** - Next.js frontend with interactive map visualization
+- **`api.dockerfile`** - Docker configuration for API service
+- **`ui.dockerfile`** - Docker configuration for UI service
 
 Key technologies include Python, FastAPI, Next.js, React, PostgreSQL, Redis, and Docker.
 
@@ -29,10 +31,22 @@ This project can be run entirely with Docker or in a hybrid mode with the UI/API
     cd against-wind
     ```
 
-2.  **Configure Environment**:
-    Copy the example environment file. You may need to update it with your own keys, such as a Mapbox token for map rendering.
+2.  **Run the setup script** (recommended):
+    ```bash
+    chmod +x scripts/dev-setup.sh
+    ./scripts/dev-setup.sh
+    ```
+    This will:
+    - Check prerequisites
+    - Create `.env` from template
+    - Install API dependencies with `uv`
+    - Install UI dependencies with `npm`
+
+3.  **Manual setup** (alternative):
     ```bash
     cp .env.example .env
+    uv sync
+    cd ui && npm install && cd ..
     ```
 
 ### 2. Running with Docker (Recommended)
@@ -59,12 +73,11 @@ Run the UI and API on your local machine for faster development, while keeping s
     ```
 
 2.  **Run the Backend (API)**:
-    In a new terminal, navigate to the `api` directory and use `uv` to install dependencies and run the server.
+    In a new terminal, install dependencies and run the server from the root directory.
     ```bash
-    cd api
     uv sync
     uv run alembic upgrade head # Apply database migrations
-    uv run uvicorn app.main:app --reload
+    uv run uvicorn api.app.main:app --reload
     ```
 
 3.  **Run the Frontend (UI)**:
@@ -94,19 +107,19 @@ Here are the most common Docker commands for managing the application:
 When you change a database model in the API, you'll need to generate a new migration.
 
 ```bash
-# From the api/ directory
-uv run alembic revision --autogenerate -m "Your description of the change"
-uv run alembic upgrade head
+# From the root directory
+cd api && uv run alembic revision --autogenerate -m "Your description of the change"
+cd api && uv run alembic upgrade head
 ```
 
 ### Running Tests
 
 ```bash
-# Backend tests (from api/ directory)
-uv run pytest
+# Backend tests (from root directory)
+uv run pytest api/tests/
 
 # Frontend tests (from ui/ directory)
-pnpm test
+cd ui && pnpm test
 ```
 
 ## 🤝 Contributing

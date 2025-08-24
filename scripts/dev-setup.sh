@@ -36,9 +36,7 @@ fi
 
 # Install API dependencies
 echo "Installing API dependencies..."
-cd api
 uv sync
-cd ..
 
 # Install UI dependencies
 echo "Installing UI dependencies..."
@@ -59,6 +57,6 @@ echo "2. Run: docker-compose up -d"
 echo "3. Open http://localhost:3000"
 echo ""
 echo "For manual development:"
-echo "- API: cd api && uv run uvicorn app.main:app --reload"
+echo "- API: uv run uvicorn api.app.main:app --reload"
 echo "- UI: cd ui && npm run dev"
-echo "- Worker: cd api && uv run python -m app.worker.worker"
+echo "- Worker: uv run python -m api.app.worker.worker"

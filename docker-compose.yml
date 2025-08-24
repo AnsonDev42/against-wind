@@ -5,7 +5,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: ./Dockerfile
+      dockerfile: ./api.dockerfile
     ports:
       - "8000:8000"
     environment:
@@ -26,8 +26,8 @@ services:
   # Frontend UI
   ui:
     build:
-      context: ./ui
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./ui.dockerfile
     ports:
       - "3000:3000"
     environment:
@@ -42,7 +42,7 @@ services:
   worker:
     build:
       context: .
-      dockerfile: ./Dockerfile
+      dockerfile: ./api.dockerfile
     environment:
       - DATABASE_URL=postgresql://postgres:password@postgres:5432/against_wind
       - REDIS_URL=redis://redis:6379
