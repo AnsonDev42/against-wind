@@ -59,6 +59,44 @@ async def get_route(route_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/routes/{route_id}/coordinates")
+async def get_route_coordinates(route_id: str):
+    """Get route coordinates for map visualization."""
+    try:
+        analysis_service = AnalysisService()
+        route_points = await analysis_service._load_route_points(route_id)
+
+        if not route_points:
+            raise HTTPException(status_code=404, detail="Route not found")
+
+        # Convert route points to GeoJSON format
+        coordinates = [[point.lon, point.lat] for point in route_points]
+
+        geojson = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "route_id": route_id,
+                        "total_distance_km": route_points[-1].distance_m / 1000.0
+                        if route_points
+                        else 0,
+                    },
+                    "geometry": {"type": "LineString", "coordinates": coordinates},
+                }
+            ],
+        }
+
+        return geojson
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting route coordinates: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/analyze")
 async def analyze_route(
     route_id: str = Query(..., description="Route ID to analyze"),

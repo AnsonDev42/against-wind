@@ -269,6 +269,9 @@ class AnalysisService:
                 wind_class=wind_class,
                 confidence=confidence,
             )
+            # Add coordinates to segment for frontend visualization
+            segment.lat = point.lat
+            segment.lon = point.lon
             segments.append(segment)
 
         return segments

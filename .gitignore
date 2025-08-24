@@ -10,3 +10,5 @@ wheels/
 .venv
 */.next
 */node_modules
+/.env
+/ui/.env

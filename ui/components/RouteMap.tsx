@@ -19,40 +19,59 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
     latitude: 51.5074,
     zoom: 10
   })
+  const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null)
 
-  // Generate route line from analysis data
-  const routeGeoJSON = analysisData?.segments ? {
-    type: 'FeatureCollection' as const,
-    features: [{
-      type: 'Feature' as const,
-      properties: {},
-      geometry: {
-        type: 'LineString' as const,
-        coordinates: analysisData.segments.map((segment: any) => [
-          segment.lon || 0, // These would come from the route data
-          segment.lat || 0
-        ])
-      }
-    }]
-  } : null
+  // Fetch route coordinates when routeId changes
+  useEffect(() => {
+    if (routeId) {
+      fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/routes/${routeId}/coordinates`)
+        .then(res => res.json())
+        .then(data => {
+          setRouteGeoJSON(data)
+          // Fit map to route bounds
+          if (data.features?.[0]?.geometry?.coordinates && mapRef.current) {
+            const coordinates = data.features[0].geometry.coordinates
+            if (coordinates.length > 0) {
+              const bounds = coordinates.reduce(
+                (bounds: [[number, number], [number, number]], coord: [number, number]) => [
+                  [Math.min(bounds[0][0], coord[0]), Math.min(bounds[0][1], coord[1])],
+                  [Math.max(bounds[1][0], coord[0]), Math.max(bounds[1][1], coord[1])]
+                ],
+                [[coordinates[0][0], coordinates[0][1]], [coordinates[0][0], coordinates[0][1]]]
+              )
+              mapRef.current.fitBounds(bounds, {
+                padding: 50,
+                duration: 1000
+              })
+            }
+          }
+        })
+        .catch(err => console.error('Failed to fetch route coordinates:', err))
+    } else {
+      setRouteGeoJSON(null)
+    }
+  }, [routeId])
 
-  // Generate wind segments with colors
+  // Generate wind segments with colors from analysis data
   const windSegments = analysisData?.segments ? {
     type: 'FeatureCollection' as const,
-    features: analysisData.segments.map((segment: any, index: number) => ({
-      type: 'Feature' as const,
-      properties: {
-        windClass: segment.wind_class,
-        windSpeed: segment.wind_ms1p5m,
-        windDirection: segment.wind_dir_deg10m,
-        confidence: segment.confidence,
-        yawAngle: segment.yaw_deg
-      },
-      geometry: {
-        type: 'Point' as const,
-        coordinates: [segment.lon || 0, segment.lat || 0]
-      }
-    }))
+    features: analysisData.segments
+      .filter((segment: any) => segment.lat && segment.lon)
+      .map((segment: any, index: number) => ({
+        type: 'Feature' as const,
+        properties: {
+          windClass: segment.wind_class,
+          windSpeed: segment.wind_ms1p5m,
+          windDirection: segment.wind_dir_deg10m,
+          confidence: segment.confidence,
+          yawAngle: segment.yaw_deg,
+          seq: segment.seq
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [segment.lon, segment.lat]
+        }
+      }))
   } : null
 
   // Route line layer
@@ -66,49 +85,34 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
     }
   }
 
-  // Wind segments layer
+  // Wind segments layer with enhanced styling
   const windSegmentsLayer: CircleLayer = {
     id: 'wind-segments',
     type: 'circle',
     paint: {
-      'circle-radius': 6,
+      'circle-radius': [
+        'interpolate',
+        ['linear'],
+        ['get', 'windSpeed'],
+        0, 4,
+        5, 8,
+        15, 12
+      ],
       'circle-color': [
         'match',
         ['get', 'windClass'],
-        'head', '#ef4444',
-        'cross', '#f59e0b', 
-        'tail', '#10b981',
-        '#6b7280'
+        'head', '#dc2626',     // Red for headwind
+        'cross', '#d97706',    // Amber for crosswind
+        'tail', '#059669',     // Green for tailwind
+        '#6b7280'              // Gray fallback
       ],
       'circle-stroke-width': 2,
       'circle-stroke-color': '#ffffff',
-      'circle-opacity': 0.8
+      'circle-opacity': 0.9,
+      'circle-stroke-opacity': 1
     }
   }
 
-  // Fit map to route bounds when analysis data changes
-  useEffect(() => {
-    if (analysisData?.segments && mapRef.current) {
-      const coordinates = analysisData.segments
-        .map((segment: any) => [segment.lon || 0, segment.lat || 0])
-        .filter((coord: number[]) => coord[0] !== 0 && coord[1] !== 0)
-
-      if (coordinates.length > 0) {
-        const bounds = coordinates.reduce(
-          (bounds, coord) => [
-            [Math.min(bounds[0][0], coord[0]), Math.min(bounds[0][1], coord[1])],
-            [Math.max(bounds[1][0], coord[0]), Math.max(bounds[1][1], coord[1])]
-          ],
-          [[coordinates[0][0], coordinates[0][1]], [coordinates[0][0], coordinates[0][1]]]
-        )
-
-        mapRef.current.fitBounds(bounds as [[number, number], [number, number]], {
-          padding: 50,
-          duration: 1000
-        })
-      }
-    }
-  }, [analysisData])
 
   if (!MAPBOX_TOKEN) {
     return (
@@ -133,6 +137,24 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
         style={{ width: '100%', height: '100%' }}
         mapStyle="mapbox://styles/mapbox/outdoors-v12"
         attributionControl={false}
+        interactiveLayerIds={windSegments ? ['wind-segments'] : []}
+        onClick={(event) => {
+          if (event.features && event.features.length > 0) {
+            const feature = event.features[0]
+            const props = feature.properties
+            if (props) {
+              // Show wind details popup
+              console.log('Wind segment clicked:', {
+                windClass: props.windClass,
+                windSpeed: props.windSpeed,
+                windDirection: props.windDirection,
+                yawAngle: props.yawAngle,
+                confidence: props.confidence
+              })
+            }
+          }
+        }}
+        cursor={windSegments ? 'pointer' : 'grab'}
       >
         {/* Route line */}
         {routeGeoJSON && (
@@ -159,23 +181,36 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
         </div>
       )}
 
-      {/* Map legend */}
+      {/* Enhanced Map legend */}
       {analysisData && (
-        <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-4">
-          <h4 className="font-medium text-gray-900 mb-2">Wind Conditions</h4>
-          <div className="space-y-2 text-sm">
-            <div className="flex items-center">
-              <div className="w-4 h-4 rounded-full bg-red-500 mr-2"></div>
-              <span>Headwind</span>
+        <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-4 max-w-xs">
+          <h4 className="font-medium text-gray-900 mb-3">Wind Analysis</h4>
+          <div className="space-y-2 text-sm mb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <div className="w-4 h-4 rounded-full bg-red-600 mr-2"></div>
+                <span>Headwind</span>
+              </div>
+              <span className="font-medium">{Math.round(analysisData.summary?.head_pct || 0)}%</span>
             </div>
-            <div className="flex items-center">
-              <div className="w-4 h-4 rounded-full bg-amber-500 mr-2"></div>
-              <span>Crosswind</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <div className="w-4 h-4 rounded-full bg-amber-600 mr-2"></div>
+                <span>Crosswind</span>
+              </div>
+              <span className="font-medium">{Math.round(analysisData.summary?.cross_pct || 0)}%</span>
             </div>
-            <div className="flex items-center">
-              <div className="w-4 h-4 rounded-full bg-green-500 mr-2"></div>
-              <span>Tailwind</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <div className="w-4 h-4 rounded-full bg-green-600 mr-2"></div>
+                <span>Tailwind</span>
+              </div>
+              <span className="font-medium">{Math.round(analysisData.summary?.tail_pct || 0)}%</span>
             </div>
+          </div>
+          <div className="text-xs text-gray-500 border-t pt-2">
+            <p>Circle size = wind speed</p>
+            <p>Click segments for details</p>
           </div>
         </div>
       )}
