@@ -2,6 +2,7 @@ from typing import AsyncGenerator, List, Optional, Dict
 from datetime import datetime, timedelta
 import uuid
 import logging
+from pathlib import Path
 from api.app.domain.models import (
     AnalysisRequest,
     Route,
@@ -25,6 +26,10 @@ logger = logging.getLogger(__name__)
 # In-memory storage for routes (temporary solution until database is implemented)
 _route_storage: Dict[str, Route] = {}
 _route_points_storage: Dict[str, List[RoutePoint]] = {}
+_analysis_cache: Dict[str, dict] = {}
+
+# Fixed demo route ID used by the UI
+DEMO_ROUTE_ID = "demo-glossop-sheffield"
 
 
 class AnalysisService:
@@ -89,6 +94,22 @@ class AnalysisService:
     ) -> AsyncGenerator[dict, None]:
         """Analyze route and stream progress updates."""
         try:
+            # Attempt to serve from cache first
+            cache_key = self._cache_key(
+                request.route_id, request.provider, request.depart_time
+            )
+            if cache_key in _analysis_cache:
+                cached = _analysis_cache[cache_key]
+                yield ProgressEvent(
+                    data={
+                        "stage": "cache_hit",
+                        "progress": 0.95,
+                        "message": "Serving cached analysis result",
+                    }
+                )
+                yield CompleteResultEvent(data=cached)
+                return
+
             # Step 1: Load route data
             yield ProgressEvent(
                 data={
@@ -180,14 +201,16 @@ class AnalysisService:
             result = await self._store_analysis_result(request, segments, summary)
 
             # Step 7: Complete
-            yield CompleteResultEvent(
-                data={
-                    "result": result.model_dump(),
-                    "segments": [seg.model_dump() for seg in segments],
-                    "summary": summary.model_dump(),
-                    "map_style_url": self._generate_map_style_url(segments),
-                }
-            )
+            payload = {
+                "result": result.model_dump(),
+                "segments": [seg.model_dump() for seg in segments],
+                "summary": summary.model_dump(),
+                "map_style_url": self._generate_map_style_url(segments),
+            }
+            # Cache the completed payload
+            _analysis_cache[cache_key] = payload
+
+            yield CompleteResultEvent(data=payload)
 
         except Exception as e:
             logger.error(f"Analysis failed: {e}")
@@ -330,11 +353,17 @@ class AnalysisService:
         try:
             route_points = _route_points_storage.get(route_id)
             if not route_points:
-                logger.error(f"No route points found for route_id: {route_id}")
-                logger.error(
-                    f"Available route IDs: {list(_route_points_storage.keys())}"
-                )
-                return None
+                # Attempt to auto-load the demo route if requested
+                if route_id == DEMO_ROUTE_ID:
+                    loaded = await self._load_demo_route_into_memory()
+                    if loaded:
+                        route_points = _route_points_storage.get(route_id)
+                if not route_points:
+                    logger.error(f"No route points found for route_id: {route_id}")
+                    logger.error(
+                        f"Available route IDs: {list(_route_points_storage.keys())}"
+                    )
+                    return None
 
             logger.info(f"Loaded {len(route_points)} route points for route {route_id}")
             return route_points
@@ -377,3 +406,54 @@ class AnalysisService:
 
         # Placeholder - implement with actual database
         return result
+
+    def _cache_key(self, route_id: str, provider: str, depart_time: datetime) -> str:
+        """Normalize cache key to the hour to increase hit rate."""
+        depart_hour = depart_time.replace(
+            minute=0, second=0, microsecond=0, tzinfo=depart_time.tzinfo
+        )
+        return f"{route_id}:{provider}:{depart_hour.isoformat()}"
+
+    async def _load_demo_route_into_memory(self) -> bool:
+        """Load the demo GPX into in-memory storage with fixed ID if available.
+
+        Checks known local paths: `ui/public/demo-route.gpx` and
+        `api/tests/gpx_samples/glossop-sheffield-without-imestamp.gpx`.
+        """
+        try:
+            # Get project root (assuming we're running from project root)
+            project_root = Path.cwd()
+            candidate_paths = [
+                project_root / "ui/public/demo-route.gpx",
+                project_root
+                / "api/tests/gpx_samples/glossop-sheffield-without-imestamp.gpx",
+            ]
+            gpx_path = next((p for p in candidate_paths if p.exists()), None)
+            if not gpx_path:
+                logger.error(
+                    f"Demo GPX file not found in known locations: {[str(p) for p in candidate_paths]}"
+                )
+                return False
+
+            gpx_text = gpx_path.read_text(encoding="utf-8")
+
+            # Process GPX content
+            route_points, metadata = self.gpx_processor.process_route(gpx_text)
+
+            # Create a Route with the fixed demo ID
+            route = Route(
+                id=DEMO_ROUTE_ID,
+                gpx_url=str(gpx_path),
+                bbox=metadata["bbox"],
+                length_km=metadata["total_distance_km"],
+                created_at=datetime.utcnow(),
+                name="Glossop to Sheffield (Demo)",
+            )
+
+            # Store directly in memory (skip S3 for demo)
+            await self._store_route(route, route_points)
+            logger.info("Demo route loaded into memory with id %s", DEMO_ROUTE_ID)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to load demo route into memory: {e}")
+            return False
