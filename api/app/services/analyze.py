@@ -1,6 +1,7 @@
 from typing import AsyncGenerator, List, Optional, Dict
 from datetime import datetime, timedelta
 import uuid
+import hashlib
 import logging
 from pathlib import Path
 from api.app.domain.models import (
@@ -44,11 +45,17 @@ class AnalysisService:
     async def create_route(self, gpx_content: str, name: Optional[str] = None) -> Route:
         """Create a new route from GPX content."""
         try:
-            # Process GPX content
-            route_points, metadata = self.gpx_processor.process_route(gpx_content)
+            # Generate a deterministic ID from the GPX content hash
+            route_hash = hashlib.sha256(gpx_content.encode("utf-8")).hexdigest()
+            route_id = f"sha256-{route_hash[:32]}"  # Use a truncated hash for the ID
 
-            # Generate route ID
-            route_id = str(uuid.uuid4())
+            # Check if route already exists
+            if existing_route := await self.get_route(route_id):
+                logger.info(f"Returning existing route for ID {route_id}")
+                return existing_route
+
+            # Process GPX content if it's a new route
+            route_points, metadata = self.gpx_processor.process_route(gpx_content)
 
             # Store GPX file in S3
             gpx_key = f"routes/{route_id}/original.gpx"
