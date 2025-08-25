@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Map, { Source, Layer, MapRef } from 'react-map-gl'
-import type { LineLayer, CircleLayer } from 'mapbox-gl'
+import { loadDemoRouteCoordinates } from '@/lib/demo'
 
 interface RouteMapProps {
   routeId: string | null
@@ -20,37 +20,64 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
     zoom: 10
   })
   const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null)
+  const [mapLoaded, setMapLoaded] = useState(false)
 
   // Fetch route coordinates when routeId changes
   useEffect(() => {
     if (routeId) {
-      fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/routes/${routeId}/coordinates`)
-        .then(res => res.json())
-        .then(data => {
-          setRouteGeoJSON(data)
-          // Fit map to route bounds
-          if (data.features?.[0]?.geometry?.coordinates && mapRef.current) {
-            const coordinates = data.features[0].geometry.coordinates
-            if (coordinates.length > 0) {
-              const bounds = coordinates.reduce(
-                (bounds: [[number, number], [number, number]], coord: [number, number]) => [
-                  [Math.min(bounds[0][0], coord[0]), Math.min(bounds[0][1], coord[1])],
-                  [Math.max(bounds[1][0], coord[0]), Math.max(bounds[1][1], coord[1])]
-                ],
-                [[coordinates[0][0], coordinates[0][1]], [coordinates[0][0], coordinates[0][1]]]
-              )
-              mapRef.current.fitBounds(bounds, {
-                padding: 50,
-                duration: 1000
-              })
+      // For demo route, use cached coordinates to avoid backend dependency
+      if (routeId === 'demo-glossop-sheffield') {
+        loadDemoRouteCoordinates()
+          .then(data => {
+            if (data) {
+              setRouteGeoJSON(data)
+            } else {
+              // Fallback to API if demo cache fails
+              return fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/routes/${routeId}/coordinates`)
+                .then(res => res.json())
+                .then(data => setRouteGeoJSON(data))
             }
-          }
-        })
-        .catch(err => console.error('Failed to fetch route coordinates:', err))
+          })
+          .catch(err => {
+            console.error('Failed to load demo coordinates, trying API:', err)
+            // Fallback to API
+            fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/routes/${routeId}/coordinates`)
+              .then(res => res.json())
+              .then(data => setRouteGeoJSON(data))
+              .catch(apiErr => console.error('Failed to fetch route coordinates:', apiErr))
+          })
+      } else {
+        // For non-demo routes, fetch from API
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/routes/${routeId}/coordinates`)
+          .then(res => res.json())
+          .then(data => {
+            setRouteGeoJSON(data)
+          })
+          .catch(err => console.error('Failed to fetch route coordinates:', err))
+      }
     } else {
       setRouteGeoJSON(null)
     }
   }, [routeId])
+
+  // Fit bounds after the map has loaded and route data is ready
+  useEffect(() => {
+    if (!mapLoaded || !routeGeoJSON || !mapRef.current) return
+    const coordinates = routeGeoJSON.features?.[0]?.geometry?.coordinates
+    if (!coordinates || coordinates.length === 0) return
+    const bounds = coordinates.reduce(
+      (b: [[number, number], [number, number]], coord: [number, number]) => [
+        [Math.min(b[0][0], coord[0]), Math.min(b[0][1], coord[1])],
+        [Math.max(b[1][0], coord[0]), Math.max(b[1][1], coord[1])]
+      ],
+      [[coordinates[0][0], coordinates[0][1]], [coordinates[0][0], coordinates[0][1]]]
+    )
+    try {
+      mapRef.current.fitBounds(bounds, { padding: 50, duration: 1000 })
+    } catch (e) {
+      console.warn('fitBounds failed (possibly before style ready):', e)
+    }
+  }, [mapLoaded, routeGeoJSON])
 
   // Generate wind segments with colors from analysis data
   const windSegments = analysisData?.segments ? {
@@ -75,7 +102,7 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
   } : null
 
   // Route line layer
-  const routeLineLayer: LineLayer = {
+  const routeLineLayer = {
     id: 'route-line',
     type: 'line',
     paint: {
@@ -86,7 +113,7 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
   }
 
   // Wind segments layer with enhanced styling
-  const windSegmentsLayer: CircleLayer = {
+  const windSegmentsLayer = {
     id: 'wind-segments',
     type: 'circle',
     paint: {
@@ -128,7 +155,7 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
   }
 
   return (
-    <div className="flex-1 relative">
+    <div className="relative h-full w-full">
       <Map
         ref={mapRef}
         {...viewState}
@@ -137,6 +164,7 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
         style={{ width: '100%', height: '100%' }}
         mapStyle="mapbox://styles/mapbox/outdoors-v12"
         attributionControl={false}
+        onLoad={() => setMapLoaded(true)}
         interactiveLayerIds={windSegments ? ['wind-segments'] : []}
         onClick={(event) => {
           if (event.features && event.features.length > 0) {
@@ -159,14 +187,47 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
         {/* Route line */}
         {routeGeoJSON && (
           <Source id="route" type="geojson" data={routeGeoJSON}>
-            <Layer {...routeLineLayer} />
+            <Layer
+              id="route-line"
+              type="line"
+              paint={{
+                'line-color': '#374151',
+                'line-width': 3,
+                'line-opacity': 0.8,
+              }}
+            />
           </Source>
         )}
 
         {/* Wind segments */}
         {windSegments && (
           <Source id="wind-segments" type="geojson" data={windSegments}>
-            <Layer {...windSegmentsLayer} />
+            <Layer
+              id="wind-segments"
+              type="circle"
+              paint={{
+                'circle-radius': [
+                  'interpolate',
+                  ['linear'],
+                  ['get', 'windSpeed'],
+                  0, 4,
+                  5, 8,
+                  15, 12,
+                ],
+                'circle-color': [
+                  'match',
+                  ['get', 'windClass'],
+                  'head', '#dc2626',
+                  'cross', '#d97706',
+                  'tail', '#059669',
+                  '#6b7280',
+                ],
+                'circle-stroke-width': 2,
+                'circle-stroke-color': '#ffffff',
+                'circle-opacity': 0.9,
+                'circle-stroke-opacity': 1,
+              }}
+            />
           </Source>
         )}
       </Map>

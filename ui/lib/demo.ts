@@ -57,3 +57,38 @@ export function cacheAnalysisResults(results: any) {
     console.error('Failed to cache analysis results:', error)
   }
 }
+
+export async function loadDemoRouteCoordinates(): Promise<any | null> {
+  try {
+    // Load demo coordinates from cached analysis results
+    const response = await fetch('/demo-cache.json')
+    if (response.ok) {
+      const demoResults = await response.json()
+      const segments = demoResults.segments
+      if (segments && segments.length > 0) {
+        // Convert segments to GeoJSON format
+        const coordinates = segments.map((segment: any) => [segment.lon, segment.lat])
+        
+        return {
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
+              properties: {
+                route_id: "demo-glossop-sheffield",
+                total_distance_km: 50, // Approximate distance for demo
+              },
+              geometry: {
+                type: "LineString",
+                coordinates: coordinates
+              }
+            }
+          ]
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load demo route coordinates:', error)
+  }
+  return null
+}
