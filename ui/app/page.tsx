@@ -5,6 +5,7 @@ import { UploadForm } from '@/components/UploadForm'
 import { RouteMap } from '@/components/RouteMap'
 import { AnalysisPanel } from '@/components/AnalysisPanel'
 import { Header } from '@/components/Header'
+import SettingsPanel from '@/components/SettingsPanel'
 import { loadDemoRoute, loadCachedAnalysisResults, cacheAnalysisResults, DEMO_ROUTE_CONFIG } from '@/lib/demo'
 
 export default function Home() {
@@ -13,6 +14,7 @@ export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [isDemoMode, setIsDemoMode] = useState(false)
   const [isLoadingDemo, setIsLoadingDemo] = useState(true)
+  const [showSettings, setShowSettings] = useState(false)
 
   const handleRouteUploaded = (newRouteId: string) => {
     setRouteId(newRouteId)
@@ -64,6 +66,16 @@ export default function Home() {
     initializeDemo()
   }, [])
 
+  // Listen for settings toggle event
+  useEffect(() => {
+    const handleToggleSettings = () => {
+      setShowSettings(prev => !prev)
+    }
+
+    window.addEventListener('toggle-settings', handleToggleSettings)
+    return () => window.removeEventListener('toggle-settings', handleToggleSettings)
+  }, [])
+
   const handleNewRoute = (newRouteId: string) => {
     setRouteId(newRouteId)
     setAnalysisData(null)
@@ -98,6 +110,9 @@ export default function Home() {
       
       <div className="flex flex-1 overflow-hidden min-h-0">
         {/* Left Panel */}
+        {showSettings ? (
+          <SettingsPanel />
+        ) : (
         <div className="w-96 bg-white dark:bg-gray-800 shadow-lg flex flex-col">
           <div className="p-6 border-b">
             <div className="flex items-center justify-between mb-4">
@@ -201,6 +216,7 @@ export default function Home() {
             </div>
           )}
         </div>
+        )}
 
         {/* Map */}
         <div className="flex-1 min-h-0">

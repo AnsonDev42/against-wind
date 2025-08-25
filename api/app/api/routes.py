@@ -7,10 +7,14 @@ import asyncio
 import uuid
 from api.app.domain.models import Route, AnalysisRequest, ErrorEvent
 from api.app.services.analyze import AnalysisService
+from api.app.api.strava import router as strava_router
 import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Include Strava routes
+router.include_router(strava_router)
 
 
 @router.post("/routes", response_model=dict)
