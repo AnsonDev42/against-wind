@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { CalendarIcon, PlayIcon, ArrowPathIcon } from '@heroicons/react/24/outline'
+import { PlayIcon, ArrowPathIcon } from '@heroicons/react/24/outline'
 import { format } from 'date-fns'
 
 interface AnalysisPanelProps {
@@ -116,7 +116,6 @@ export function AnalysisPanel({
               className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
               disabled={isAnalyzing}
             />
-            <CalendarIcon className="absolute right-3 top-2.5 h-4 w-4 text-gray-400 pointer-events-none" />
           </div>
         </div>
 
