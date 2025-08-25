@@ -51,17 +51,37 @@ export function AnalysisPanel({
       eventSource.addEventListener('complete', (event: MessageEvent) => {
         const data = JSON.parse(event.data)
         onAnalysisComplete(data)
+        // Hide progress once completed
+        setProgress(null)
         eventSource.close()
       })
 
+      // Handle server-sent error events (custom SSE event: "error").
+      // Important: The browser also dispatches native connection error events named 'error'
+      // which do NOT carry a data payload. We must guard against those here and let
+      // the dedicated onerror handler below manage connection issues.
       eventSource.addEventListener('error', (event: MessageEvent) => {
-        const data = JSON.parse(event.data)
-        onAnalysisError(data.message || 'Analysis failed')
-        eventSource.close()
+        try {
+          const raw = (event as any)?.data
+          if (typeof raw !== 'string') {
+            // Likely a native connection error event; ignore here.
+            return
+          }
+          const data = JSON.parse(raw)
+          onAnalysisError(data.message || 'Analysis failed')
+          // Hide progress on error
+          setProgress(null)
+          eventSource.close()
+        } catch {
+          // If parsing fails, ignore and let the native onerror handle it
+          // to avoid prematurely closing a valid stream.
+        }
       })
 
       eventSource.onerror = () => {
         onAnalysisError('Connection error')
+        // Hide progress on connection error
+        setProgress(null)
         eventSource.close()
       }
 
@@ -141,13 +161,13 @@ export function AnalysisPanel({
               {progress.stage?.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}
             </span>
             <span className="text-sm text-blue-700">
-              {Math.round(progress.progress * 100)}%
+              {Math.max(0, Math.min(100, Math.round(progress.progress * 100)))}%
             </span>
           </div>
           <div className="w-full bg-blue-200 rounded-full h-2">
             <div
               className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-              style={{ width: `${progress.progress * 100}%` }}
+              style={{ width: `${Math.max(0, Math.min(100, Math.round(progress.progress * 100)))}%` }}
             />
           </div>
           {progress.message && (
