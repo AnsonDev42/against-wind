@@ -98,6 +98,11 @@ class AnalysisRequest(BaseModel):
     depart_time: datetime
     provider: str = "open-meteo"
     speed_profile: str = "preset"
+    use_gpx_timestamps: bool = False  # Use timestamps from GPX file if available
+    estimated_duration_hours: Optional[float] = None  # For routes without timestamps
+    use_historical_mode: bool = (
+        False  # Use GPX start time as actual departure for historical analysis
+    )
 
 
 class ForecastResult(BaseModel):

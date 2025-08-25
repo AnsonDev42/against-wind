@@ -59,6 +59,53 @@ async def get_route(route_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/routes/{route_id}/metadata")
+async def get_route_metadata(route_id: str):
+    """Get detailed route metadata including timestamp information."""
+    try:
+        analysis_service = AnalysisService()
+        route_points = await analysis_service._load_route_points(route_id)
+
+        if not route_points:
+            raise HTTPException(status_code=404, detail="Route not found")
+
+        # Calculate metadata
+        has_timestamps = any(p.timestamp is not None for p in route_points)
+        timestamp_coverage = 0.0
+        start_time = None
+        end_time = None
+
+        if has_timestamps:
+            timestamp_count = sum(1 for p in route_points if p.timestamp is not None)
+            timestamp_coverage = timestamp_count / len(route_points)
+
+            timestamped_points = [p for p in route_points if p.timestamp is not None]
+            if timestamped_points:
+                start_time = min(p.timestamp for p in timestamped_points)
+                end_time = max(p.timestamp for p in timestamped_points)
+
+        total_distance_km = route_points[-1].distance_m / 1000.0 if route_points else 0
+
+        return {
+            "route_id": route_id,
+            "total_distance_km": total_distance_km,
+            "total_points": len(route_points),
+            "has_timestamps": has_timestamps,
+            "timestamp_coverage": timestamp_coverage,
+            "start_time": start_time,
+            "end_time": end_time,
+            "estimated_duration_hours": total_distance_km / 25.0
+            if total_distance_km > 0
+            else 0,  # Default 25 km/h
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting route metadata: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/routes/{route_id}/coordinates")
 async def get_route_coordinates(route_id: str):
     """Get route coordinates for map visualization."""
@@ -103,6 +150,14 @@ async def analyze_route(
     depart: str = Query(..., description="Departure time in ISO format"),
     provider: str = Query("open-meteo", description="Forecast provider"),
     speed_profile: str = Query("preset", description="Speed profile"),
+    use_gpx_timestamps: bool = Query(False, description="Use timestamps from GPX file"),
+    estimated_duration_hours: Optional[float] = Query(
+        None, description="Estimated duration for routes without timestamps"
+    ),
+    use_historical_mode: bool = Query(
+        False,
+        description="Use GPX start time as actual departure for historical wind analysis",
+    ),
 ):
     """Analyze route wind conditions with Server-Sent Events."""
     try:
@@ -115,6 +170,9 @@ async def analyze_route(
             depart_time=depart_time,
             provider=provider,
             speed_profile=speed_profile,
+            use_gpx_timestamps=use_gpx_timestamps,
+            estimated_duration_hours=estimated_duration_hours,
+            use_historical_mode=use_historical_mode,
         )
 
         # Return SSE stream

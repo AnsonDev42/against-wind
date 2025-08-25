@@ -3,6 +3,7 @@
 import { SunIcon } from '@heroicons/react/24/outline'
 import { useEffect, useState } from 'react'
 import HealthCheckIndicator, { HealthStatus } from './HealthCheckIndicator'
+import { ThemeToggle } from './ThemeToggle'
 
 export function Header() {
   const [healthStatus, setHealthStatus] = useState<HealthStatus>('pending')
@@ -34,19 +35,22 @@ export function Header() {
   }, [])
 
   return (
-    <header className="bg-white shadow-sm border-b">
+    <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 transition-colors">
       <div className="px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center">
-            <SunIcon className="h-8 w-8 text-blue-600 mr-3" />
+            <SunIcon className="h-8 w-8 text-blue-600 dark:text-blue-400 mr-3" />
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Against Wind</h1>
-              <p className="text-sm text-gray-600">
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Against Wind</h1>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
                 Cycling route wind analysis
               </p>
             </div>
           </div>
-          <HealthCheckIndicator status={healthStatus} />
+          <div className="flex items-center space-x-4">
+            <ThemeToggle />
+            <HealthCheckIndicator status={healthStatus} />
+          </div>
         </div>
       </div>
     </header>
