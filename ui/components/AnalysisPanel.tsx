@@ -42,36 +42,19 @@ export function AnalysisPanel({
       
       const eventSource = new EventSource(url)
 
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          
-          if (event.type === 'progress') {
-            setProgress(data)
-          } else if (event.type === 'complete') {
-            onAnalysisComplete(data)
-            eventSource.close()
-          } else if (event.type === 'error') {
-            onAnalysisError(data.message || 'Analysis failed')
-            eventSource.close()
-          }
-        } catch (err) {
-          console.error('Error parsing SSE data:', err)
-        }
-      }
 
-      eventSource.addEventListener('progress', (event) => {
+      eventSource.addEventListener('progress', (event: MessageEvent) => {
         const data = JSON.parse(event.data)
         setProgress(data)
       })
 
-      eventSource.addEventListener('complete', (event) => {
+      eventSource.addEventListener('complete', (event: MessageEvent) => {
         const data = JSON.parse(event.data)
         onAnalysisComplete(data)
         eventSource.close()
       })
 
-      eventSource.addEventListener('error', (event) => {
+      eventSource.addEventListener('error', (event: MessageEvent) => {
         const data = JSON.parse(event.data)
         onAnalysisError(data.message || 'Analysis failed')
         eventSource.close()
