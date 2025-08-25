@@ -15,4 +15,4 @@ wheels/
 /ui/.env.local
 
 # vercel build output
-/ui/.vercel/output
+/ui/.vercel

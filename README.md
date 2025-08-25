@@ -27,7 +27,7 @@ This project can be run entirely with Docker or in a hybrid mode with the UI/API
 
 1.  **Clone the repository**:
     ```bash
-    git clone <repository-url>
+    git clone https://github.com/AnsonDev42/against-wind
     cd against-wind
     ```
 
@@ -46,7 +46,7 @@ This project can be run entirely with Docker or in a hybrid mode with the UI/API
     ```bash
     cp .env.example .env
     uv sync
-    cd ui && npm install && cd ..
+    cd ui && pnpm install && cd ..
     ```
 
 ### 2. Running with Docker (Recommended)
@@ -131,4 +131,4 @@ cd ui && pnpm test
 
 ## 📄 License
 
-[Add your license here]
+TBD
