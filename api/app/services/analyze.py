@@ -197,6 +197,7 @@ class AnalysisService:
                     "message": "Storing results...",
                 }
             )
+            logger.info(f"Storing results for route {request.route_id}...")
 
             result = await self._store_analysis_result(request, segments, summary)
 
@@ -209,6 +210,15 @@ class AnalysisService:
             }
             # Cache the completed payload
             _analysis_cache[cache_key] = payload
+            logger.info(f"Stored results for route {request.route_id}")
+            # Send a final 100% progress update before completing
+            yield ProgressEvent(
+                data={
+                    "stage": "finalizing",
+                    "progress": 1.0,
+                    "message": "Finalizing analysis...",
+                }
+            )
 
             yield CompleteResultEvent(data=payload)
 
