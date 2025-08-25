@@ -1,6 +1,6 @@
 import httpx
 from typing import List
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from api.app.providers.base import BaseForecastProvider
 from api.app.domain.models import ForecastPoint, WindSample
 from api.app.core.config import get_settings
@@ -76,28 +76,70 @@ class OpenMeteoProvider(BaseForecastProvider):
 
         return wind_samples
 
+    from datetime import datetime, timezone, timedelta
+
     def _fetch_point_wind(
         self, point: ForecastPoint, model_run_id: str
     ) -> List[WindSample]:
-        """Fetch wind data for a single point."""
-        params = {
-            "latitude": point.lat,
-            "longitude": point.lon,
-            "hourly": ["windspeed_10m", "winddirection_10m", "windgusts_10m"],
-            "forecast_days": 7,  # Get enough data for route analysis
-            "timezone": "UTC",
-        }
+        now = datetime.now(timezone.utc)
+        today = now.date()
+        target_date = point.time_utc.date()
+
+        # Choose API by recency
+        within_recent_window = target_date >= (today - timedelta(days=16))
+        hourly_vars = "windspeed_10m,winddirection_10m,windgusts_10m"
+
+        if within_recent_window:
+            # Use forecast API with past_days to fetch recent history
+            past_days = max(0, (today - target_date).days)
+            forecast_days = max(0, (target_date - today).days + 1)
+
+            params = {
+                "latitude": point.lat,
+                "longitude": point.lon,
+                "hourly": hourly_vars,
+                "timezone": "UTC",
+            }
+            if past_days > 0:
+                params["past_days"] = min(past_days, 16)
+            if forecast_days > 0:
+                # up to 16 is allowed, default is 7
+                params["forecast_days"] = min(forecast_days, 16)
+
+            api_url = f"{self.base_url}/forecast"
+            logger.info(
+                f"Fetching forecast (past_days={params.get('past_days', 0)}, "
+                f"forecast_days={params.get('forecast_days', 0)}) for {point.lat:.4f},{point.lon:.4f}"
+            )
+        else:
+            # Use ERA5 archive for older dates
+            earliest_date = datetime(1940, 1, 1, tzinfo=timezone.utc).date()
+            if target_date < earliest_date:
+                raise ValueError(
+                    f"Historical weather data not available before {earliest_date}"
+                )
+
+            params = {
+                "latitude": point.lat,
+                "longitude": point.lon,
+                "start_date": target_date.isoformat(),
+                "end_date": target_date.isoformat(),
+                "hourly": hourly_vars,
+                "timezone": "UTC",
+            }
+
+            # IMPORTANT: archive uses a different base host and dataset (era5 or era5-land)
+            api_url = "https://archive-api.open-meteo.com/v1/era5"
+            logger.info(
+                f"Fetching ERA5 archive for {target_date} at {point.lat:.4f},{point.lon:.4f}"
+            )
 
         with httpx.Client(timeout=self.timeout) as client:
-            response = client.get(f"{self.base_url}/forecast", params=params)
-            response.raise_for_status()
-            data = response.json()
+            resp = client.get(api_url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
 
-        samples = self._parse_response(data, point, model_run_id)
-        logger.info(
-            f"Parsed {len(samples)} wind samples for point {point.lat:.4f}, {point.lon:.4f}"
-        )
-        return samples
+        return self._parse_response(data, point, model_run_id)
 
     def _parse_response(
         self, data: dict, point: ForecastPoint, model_run_id: str

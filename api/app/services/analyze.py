@@ -140,7 +140,11 @@ class AnalysisService:
             )
 
             forecast_points = self._generate_forecast_points(
-                route_points, request.depart_time
+                route_points,
+                request.depart_time,
+                request.use_gpx_timestamps,
+                request.estimated_duration_hours,
+                request.use_historical_mode,
             )
 
             # Step 3: Fetch wind data
@@ -153,7 +157,17 @@ class AnalysisService:
             )
 
             provider = get_provider(request.provider)
-            wind_samples = provider.batch_wind(forecast_points)
+            try:
+                wind_samples = provider.batch_wind(forecast_points)
+            except ValueError as e:
+                # Handle specific errors from the provider (e.g., historical data not available)
+                error_msg = str(e)
+                if "Historical weather data not available" in error_msg:
+                    raise ValueError(
+                        f"Historical wind data not available for the requested dates. {error_msg}"
+                    )
+                else:
+                    raise ValueError(f"Wind data provider error: {error_msg}")
 
             if not wind_samples:
                 logger.error(
@@ -164,9 +178,17 @@ class AnalysisService:
                     logger.error(
                         f"First point: lat={forecast_points[0].lat}, lon={forecast_points[0].lon}, time={forecast_points[0].time_utc}"
                     )
-                raise ValueError(
-                    "No wind data available for the requested time and location"
-                )
+
+                # Provide more specific error message based on timing mode
+                if request.use_historical_mode:
+                    raise ValueError(
+                        "No historical wind data available for the requested time and location. "
+                        "Historical data may not be available for dates older than 7 days or before 1940."
+                    )
+                else:
+                    raise ValueError(
+                        "No wind data available for the requested time and location"
+                    )
 
             logger.info(
                 f"Retrieved {len(wind_samples)} wind samples from {request.provider}"
@@ -182,7 +204,7 @@ class AnalysisService:
             )
 
             segments = await self._process_wind_segments(
-                route_points, wind_samples, request.depart_time
+                route_points, wind_samples, forecast_points
             )
 
             # Step 5: Generate summary
@@ -234,35 +256,146 @@ class AnalysisService:
             yield ErrorEvent(data={"error": "analysis_failed", "message": str(e)})
 
     def _generate_forecast_points(
-        self, route_points: List[RoutePoint], depart_time: datetime
+        self,
+        route_points: List[RoutePoint],
+        depart_time: datetime,
+        use_gpx_timestamps: bool = False,
+        estimated_duration_hours: Optional[float] = None,
+        use_historical_mode: bool = False,
     ) -> List[ForecastPoint]:
-        """Generate forecast points from route points."""
+        """Generate forecast points from route points with different timing modes."""
         forecast_points = []
 
-        for point in route_points:
-            # Calculate ETA for this point based on distance and assumed speed
-            # For MVP, use simple constant speed assumption
-            avg_speed_kmh = 25.0  # Average cycling speed
-            eta_hours = point.distance_m / 1000.0 / avg_speed_kmh
-            point_time = depart_time + timedelta(hours=eta_hours)
+        if use_historical_mode and any(p.timestamp for p in route_points):
+            # Mode 1: Historical analysis - use GPX timestamps as-is for historical wind data
+            timestamped_points = [p for p in route_points if p.timestamp is not None]
+            if timestamped_points:
+                logger.info(
+                    "Using historical mode - GPX timestamps used as actual times for historical wind analysis"
+                )
 
-            forecast_points.append(
-                ForecastPoint(lat=point.lat, lon=point.lon, time_utc=point_time)
+                for point in route_points:
+                    if point.timestamp is not None:
+                        # Use GPX timestamp directly for historical analysis
+                        point_time = point.timestamp
+                    else:
+                        # Fallback: interpolate based on surrounding timestamped points
+                        # Find nearest timestamped points before and after
+                        before_points = [
+                            p
+                            for p in timestamped_points
+                            if p.distance_m <= point.distance_m
+                        ]
+                        after_points = [
+                            p
+                            for p in timestamped_points
+                            if p.distance_m > point.distance_m
+                        ]
+
+                        if before_points and after_points:
+                            before_point = max(
+                                before_points, key=lambda p: p.distance_m
+                            )
+                            after_point = min(after_points, key=lambda p: p.distance_m)
+
+                            # Linear interpolation between timestamps
+                            distance_ratio = (
+                                point.distance_m - before_point.distance_m
+                            ) / (after_point.distance_m - before_point.distance_m)
+                            time_diff = (
+                                after_point.timestamp - before_point.timestamp
+                            ).total_seconds()
+                            interpolated_seconds = time_diff * distance_ratio
+                            point_time = before_point.timestamp + timedelta(
+                                seconds=interpolated_seconds
+                            )
+                        elif before_points:
+                            # Use last known timestamp
+                            point_time = max(
+                                before_points, key=lambda p: p.distance_m
+                            ).timestamp
+                        elif after_points:
+                            # Use first known timestamp
+                            point_time = min(
+                                after_points, key=lambda p: p.distance_m
+                            ).timestamp
+                        else:
+                            # Fallback to distance-based calculation from GPX start
+                            gpx_start_time = min(
+                                p.timestamp for p in timestamped_points
+                            )
+                            avg_speed_kmh = 25.0
+                            eta_hours = point.distance_m / 1000.0 / avg_speed_kmh
+                            point_time = gpx_start_time + timedelta(hours=eta_hours)
+
+                    forecast_points.append(
+                        ForecastPoint(lat=point.lat, lon=point.lon, time_utc=point_time)
+                    )
+        elif use_gpx_timestamps and any(p.timestamp for p in route_points):
+            # Mode 2: Use GPX timestamps with offset from departure time
+            timestamped_points = [p for p in route_points if p.timestamp is not None]
+            if timestamped_points:
+                # Calculate offset between desired departure time and GPX start time
+                gpx_start_time = min(p.timestamp for p in timestamped_points)
+                time_offset = depart_time - gpx_start_time
+
+                for point in route_points:
+                    if point.timestamp is not None:
+                        # Use GPX timestamp with offset
+                        point_time = point.timestamp + time_offset
+                    else:
+                        # Fallback to distance-based calculation for points without timestamps
+                        avg_speed_kmh = 25.0
+                        eta_hours = point.distance_m / 1000.0 / avg_speed_kmh
+                        point_time = depart_time + timedelta(hours=eta_hours)
+
+                    forecast_points.append(
+                        ForecastPoint(lat=point.lat, lon=point.lon, time_utc=point_time)
+                    )
+        elif estimated_duration_hours is not None:
+            # Mode 2: Use estimated duration to distribute time across route
+            total_distance_km = (
+                route_points[-1].distance_m / 1000.0 if route_points else 0
             )
+
+            for point in route_points:
+                # Calculate time based on distance ratio and estimated duration
+                distance_ratio = (
+                    point.distance_m / (total_distance_km * 1000.0)
+                    if total_distance_km > 0
+                    else 0
+                )
+                eta_hours = distance_ratio * estimated_duration_hours
+                point_time = depart_time + timedelta(hours=eta_hours)
+
+                forecast_points.append(
+                    ForecastPoint(lat=point.lat, lon=point.lon, time_utc=point_time)
+                )
+        else:
+            # Mode 3: Default constant speed calculation
+            for point in route_points:
+                avg_speed_kmh = 25.0  # Average cycling speed
+                eta_hours = point.distance_m / 1000.0 / avg_speed_kmh
+                point_time = depart_time + timedelta(hours=eta_hours)
+
+                forecast_points.append(
+                    ForecastPoint(lat=point.lat, lon=point.lon, time_utc=point_time)
+                )
 
         return forecast_points
 
     async def _process_wind_segments(
-        self, route_points: List[RoutePoint], wind_samples: List, depart_time: datetime
+        self,
+        route_points: List[RoutePoint],
+        wind_samples: List,
+        forecast_points: List[ForecastPoint],
     ) -> List[SegmentWind]:
         """Process wind data into route segments."""
         segments = []
 
-        for i, point in enumerate(route_points):
-            # Calculate point time
-            avg_speed_kmh = 25.0
-            eta_hours = point.distance_m / 1000.0 / avg_speed_kmh
-            point_time = depart_time + timedelta(hours=eta_hours)
+        for i, (point, forecast_point) in enumerate(zip(route_points, forecast_points)):
+            # Use the forecast point's calculated time
+            point_time = forecast_point.time_utc
 
             # Find relevant wind samples for this point
             relevant_samples = [
