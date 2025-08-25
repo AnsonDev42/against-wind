@@ -165,24 +165,24 @@ export default function Home() {
               <div className="space-y-4">
                 <div className="bg-gray-50 rounded-lg p-4">
                   <h3 className="font-medium text-gray-900 mb-2">Wind Summary</h3>
-                  <div className="grid grid-cols-3 gap-2 text-sm">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-red-600">
+                  <div className="flex flex-col md:flex-row gap-3 md:gap-4 text-sm md:justify-between">
+                    <div className="flex-1 min-w-0 text-center flex flex-col items-center">
+                      <div className="text-lg md:text-2xl font-bold text-red-600 whitespace-nowrap leading-none">
                         {Math.round(analysisData.summary?.head_pct || 0)}%
                       </div>
-                      <div className="text-gray-600">Headwind</div>
+                      <div className="text-gray-600 leading-tight">Headwind</div>
                     </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-amber-600">
+                    <div className="flex-1 min-w-0 text-center flex flex-col items-center">
+                      <div className="text-lg md:text-2xl font-bold text-amber-600 whitespace-nowrap leading-none">
                         {Math.round(analysisData.summary?.cross_pct || 0)}%
                       </div>
-                      <div className="text-gray-600">Crosswind</div>
+                      <div className="text-gray-600 leading-tight">Crosswind</div>
                     </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-green-600">
+                    <div className="flex-1 min-w-0 text-center flex flex-col items-center">
+                      <div className="text-lg md:text-2xl font-bold text-green-600 whitespace-nowrap leading-none">
                         {Math.round(analysisData.summary?.tail_pct || 0)}%
                       </div>
-                      <div className="text-gray-600">Tailwind</div>
+                      <div className="text-gray-600 leading-tight">Tailwind</div>
                     </div>
                   </div>
                 </div>
