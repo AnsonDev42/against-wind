@@ -12,3 +12,7 @@ wheels/
 */node_modules
 /.env
 /ui/.env
+/ui/.env.local
+
+# vercel build output
+/ui/.vercel/output
