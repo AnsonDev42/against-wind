@@ -41,10 +41,12 @@ uv sync
 # Install UI dependencies
 echo "Installing UI dependencies..."
 cd ui
-if command -v npm &> /dev/null; then
-    npm install
+if command -v pnpm &> /dev/null; then
+#    npm install pnpm
+    pnpm install
+
 else
-    echo "⚠️  npm not found, skipping UI dependency installation"
+    echo "⚠️ pnpm not found, skipping UI dependency installation"
 fi
 cd ..
 
@@ -58,5 +60,5 @@ echo "3. Open http://localhost:3000"
 echo ""
 echo "For manual development:"
 echo "- API: uv run uvicorn api.app.main:app --reload"
-echo "- UI: cd ui && npm run dev"
+echo "- UI: cd ui && pnpm run dev"
 echo "- Worker: uv run python -m api.app.worker.worker"
