@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import Map, { Source, Layer, MapRef } from 'react-map-gl'
+import Map, { Source, Layer, MapRef} from 'react-map-gl'
 import { loadDemoRouteCoordinates } from '@/lib/demo'
 
 interface RouteMapProps {
@@ -21,6 +21,8 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
   })
   const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null)
   const [mapLoaded, setMapLoaded] = useState(false)
+  const [selectedSegment, setSelectedSegment] = useState<any>(null)
+  const [tooltipInfo, setTooltipInfo] = useState<{x: number, y: number, data: any} | null>(null)
 
   // Fetch route coordinates when routeId changes
   useEffect(() => {
@@ -121,9 +123,10 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
         'interpolate',
         ['linear'],
         ['get', 'windSpeed'],
-        0, 4,
-        5, 8,
-        15, 12
+        0, 6,
+        5, 10,
+        10, 16,
+        20, 24
       ],
       'circle-color': [
         'match',
@@ -171,15 +174,17 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
             const feature = event.features[0]
             const props = feature.properties
             if (props) {
-              // Show wind details popup
-              console.log('Wind segment clicked:', {
-                windClass: props.windClass,
-                windSpeed: props.windSpeed,
-                windDirection: props.windDirection,
-                yawAngle: props.yawAngle,
-                confidence: props.confidence
+              setSelectedSegment(props)
+              setTooltipInfo({
+                x: event.point.x,
+                y: event.point.y,
+                data: props
               })
             }
+          } else {
+            // Click on empty area - close tooltip
+            setTooltipInfo(null)
+            setSelectedSegment(null)
           }
         }}
         cursor={windSegments ? 'pointer' : 'grab'}
@@ -210,9 +215,10 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
                   'interpolate',
                   ['linear'],
                   ['get', 'windSpeed'],
-                  0, 4,
-                  5, 8,
-                  15, 12,
+                  0, 6,
+                  5, 10,
+                  10, 16,
+                  20, 24,
                 ],
                 'circle-color': [
                   'match',
@@ -230,7 +236,73 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
             />
           </Source>
         )}
+
       </Map>
+
+      {/* Custom tooltip for segment details */}
+      {tooltipInfo && (
+        <div 
+          className="absolute pointer-events-none z-50"
+          style={{
+            left: tooltipInfo.x + 10,
+            top: tooltipInfo.y - 10,
+            transform: 'translateY(-100%)'
+          }}
+        >
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-600 p-3 min-w-[200px] relative">
+            {/* Close button */}
+            <button
+              className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 pointer-events-auto"
+              onClick={() => {
+                setTooltipInfo(null)
+                setSelectedSegment(null)
+              }}
+            >
+              ×
+            </button>
+            
+            <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2 pr-6">Wind Details</h4>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-300">Type:</span>
+                <span className={`font-medium capitalize ${
+                  tooltipInfo.data.windClass === 'head' ? 'text-red-600 dark:text-red-400' :
+                  tooltipInfo.data.windClass === 'tail' ? 'text-green-600 dark:text-green-400' :
+                  'text-amber-600 dark:text-amber-400'
+                }`}>
+                  {tooltipInfo.data.windClass}wind
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-300">Speed:</span>
+                <span className="font-medium text-gray-900 dark:text-gray-100">{tooltipInfo.data.windSpeed?.toFixed(1)} m/s</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-300">Direction:</span>
+                <span className="font-medium text-gray-900 dark:text-gray-100">{tooltipInfo.data.windDirection?.toFixed(0)}°</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-300">Yaw Angle:</span>
+                <span className="font-medium text-gray-900 dark:text-gray-100">{tooltipInfo.data.yawAngle?.toFixed(0)}°</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-300">Confidence:</span>
+                <span className="font-medium text-gray-900 dark:text-gray-100">{(tooltipInfo.data.confidence * 100)?.toFixed(0)}%</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-300">Segment:</span>
+                <span className="font-medium text-gray-900 dark:text-gray-100">#{tooltipInfo.data.seq}</span>
+              </div>
+            </div>
+            
+            {/* Arrow pointing down */}
+            <div className="absolute top-full left-1/2 transform -translate-x-1/2">
+              <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-white dark:border-t-gray-800"></div>
+              <div className="w-0 h-0 border-l-[7px] border-r-[7px] border-t-[7px] border-l-transparent border-r-transparent border-t-gray-300 dark:border-t-gray-600 absolute top-[-7px] left-1/2 transform -translate-x-1/2 -z-10"></div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Loading overlay */}
       {isAnalyzing && (
