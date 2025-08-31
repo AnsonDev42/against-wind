@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { UploadForm } from '@/components/UploadForm'
-import { RouteMap } from '@/components/RouteMap'
-import { AnalysisPanel } from '@/components/AnalysisPanel'
+import { UploadForm } from '@/components/upload/UploadForm'
+import { RouteMap } from '@/components/map/RouteMap'
+import { AnalysisPanel } from '@/components/analysis/AnalysisPanel'
 import { Header } from '@/components/Header'
 import { loadDemoRoute, loadCachedAnalysisResults, cacheAnalysisResults, DEMO_ROUTE_CONFIG } from '@/lib/demo'
 import { Button } from "@/components/ui/button"
@@ -15,10 +15,10 @@ export default function Home() {
   const [isDemoMode, setIsDemoMode] = useState(false)
   const [isLoadingDemo, setIsLoadingDemo] = useState(true)
 
-  const handleRouteUploaded = (newRouteId: string) => {
-    setRouteId(newRouteId)
-    setAnalysisData(null)
-  }
+  // const handleRouteUploaded = (newRouteId: string) => {
+  //   setRouteId(newRouteId)
+  //   setAnalysisData(null)
+  // }
 
   const handleAnalysisStart = () => {
     setIsAnalyzing(true)
@@ -146,8 +146,6 @@ export default function Home() {
             ) : (
               <AnalysisPanel
                 routeId={routeId}
-                isAnalyzing={isAnalyzing}
-                analysisData={analysisData}
                 onAnalysisStart={handleAnalysisStart}
                 onAnalysisComplete={handleAnalysisComplete}
                 onAnalysisError={handleAnalysisError}

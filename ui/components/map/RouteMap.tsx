@@ -4,9 +4,9 @@ import { useMemo, useRef, useState } from 'react'
 import Map, { Layer, MapRef, Source } from 'react-map-gl'
 import { useRouteData } from '@/lib/hooks/useRouteData'
 import { useMapFitBounds } from '@/lib/hooks/useMapFitBounds'
-import { WindAnalysisLegend } from './map/WindAnalysisLegend'
-import { WindSegmentTooltip } from './map/WindSegmentTooltip'
-import { MapOverlay } from './map/MapOverlay'
+import { WindAnalysisLegend } from '@/components/map/WindAnalysisLegend'
+import { WindSegmentTooltip } from '@/components/map/WindSegmentTooltip'
+import { MapOverlay } from '@/components/map/MapOverlay'
 
 interface RouteMapProps {
   routeId: string | null

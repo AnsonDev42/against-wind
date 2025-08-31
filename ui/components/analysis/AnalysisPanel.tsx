@@ -11,6 +11,7 @@ import { AnalysisProgressDisplay } from './AnalysisProgressDisplay'
 
 interface AnalysisPanelProps {
   routeId: string
+  onAnalysisStart: () => void
   onAnalysisComplete: (data: any) => void
   onAnalysisError: (error: string) => void
   onReset: () => void
@@ -18,6 +19,7 @@ interface AnalysisPanelProps {
 
 export function AnalysisPanel({ 
   routeId, 
+  onAnalysisStart,
   onAnalysisComplete, 
   onAnalysisError, 
   onReset 
@@ -37,6 +39,7 @@ export function AnalysisPanel({
   } = useRouteMetadata(routeId)
 
   const { isAnalyzing, progress, handleAnalyze } = useAnalysis({
+    onAnalysisStart,
     onAnalysisComplete,
     onAnalysisError,
   })

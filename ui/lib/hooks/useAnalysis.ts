@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { AnalysisProgress, TimingMode } from '@/lib/types/analysis'
 
 interface UseAnalysisProps {
+  onAnalysisStart: () => void
   onAnalysisComplete: (data: any) => void
   onAnalysisError: (error: string) => void
 }
@@ -17,7 +18,7 @@ interface PerformAnalysisParams {
   estimatedDuration: number
 }
 
-export function useAnalysis({ onAnalysisComplete, onAnalysisError }: UseAnalysisProps) {
+export function useAnalysis({ onAnalysisStart, onAnalysisComplete, onAnalysisError }: UseAnalysisProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [progress, setProgress] = useState<AnalysisProgress | null>(null)
 
@@ -29,6 +30,7 @@ export function useAnalysis({ onAnalysisComplete, onAnalysisError }: UseAnalysis
     useHistoricalMode, 
     estimatedDuration 
   }: PerformAnalysisParams) => {
+    onAnalysisStart()
     setIsAnalyzing(true)
     setProgress(null)
 
