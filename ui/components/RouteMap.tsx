@@ -86,7 +86,7 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
     type: 'FeatureCollection' as const,
     features: analysisData.segments
       .filter((segment: any) => segment.lat && segment.lon)
-      .map((segment: any, index: number) => ({
+      .map((segment: any, _index: number) => ({
         type: 'Feature' as const,
         properties: {
           windClass: segment.wind_class,
@@ -114,34 +114,6 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
     }
   }
 
-  // Wind segments layer with enhanced styling
-  const windSegmentsLayer = {
-    id: 'wind-segments',
-    type: 'circle',
-    paint: {
-      'circle-radius': [
-        'interpolate',
-        ['linear'],
-        ['get', 'windSpeed'],
-        0, 6,
-        5, 10,
-        10, 16,
-        20, 24
-      ],
-      'circle-color': [
-        'match',
-        ['get', 'windClass'],
-        'head', '#dc2626',     // Red for headwind
-        'cross', '#d97706',    // Amber for crosswind
-        'tail', '#059669',     // Green for tailwind
-        '#6b7280'              // Gray fallback
-      ],
-      'circle-stroke-width': 2,
-      'circle-stroke-color': '#ffffff',
-      'circle-opacity': 0.9,
-      'circle-stroke-opacity': 1
-    }
-  }
 
 
   if (!MAPBOX_TOKEN) {
