@@ -11,8 +11,8 @@ wheels/
 */.next
 */node_modules
 /.env
-/ui/.env
-/ui/.env.local
+*/.env
+*/.env.local
 
 # vercel build output
 /ui/.vercel
