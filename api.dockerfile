@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
 
 # Copy root pyproject.toml and uv.lock first for better caching
 COPY pyproject.toml uv.lock ./
-RUN uv sync --group dev --no-default-groups --frozen
+RUN uv sync --only-dev --frozen
 
 COPY api/ ./api/
 # Copy any additional required files at root level
