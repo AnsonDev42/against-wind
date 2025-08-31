@@ -16,14 +16,14 @@ async def lifespan(app: FastAPI):
     # Startup
     setup_logging()
     logger.info("Starting Against Wind API...")
-    settings = get_settings()
-    
+    _ = get_settings()
+
     # Initialize database
     await init_db()
     logger.info("Database initialized")
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down Against Wind API...")
 
@@ -31,14 +31,14 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
     settings = get_settings()
-    
+
     app = FastAPI(
         title="Against Wind API",
         description="Wind analysis API for cycling routes",
         version="0.1.0",
-        lifespan=lifespan
+        lifespan=lifespan,
     )
-    
+
     # Configure CORS
     app.add_middleware(
         CORSMiddleware,
@@ -47,15 +47,15 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    
+
     # Include API routes
     app.include_router(router, prefix="/api/v1")
-    
+
     @app.get("/health")
     async def health_check():
         """Health check endpoint."""
         return {"status": "healthy", "service": "against-wind-api"}
-    
+
     return app
 
 
@@ -65,4 +65,3 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

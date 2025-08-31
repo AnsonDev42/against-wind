@@ -11,13 +11,12 @@ RUN apt-get update && apt-get install -y \
 
 # Copy root pyproject.toml and uv.lock first for better caching
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen
+RUN uv sync --group dev --no-default-groups --frozen
 
-# Copy the entire project structure
-COPY . .
+COPY api/ ./api/
+# Copy any additional required files at root level
+COPY main.py ./
 
-# Set working directory to api folder
-WORKDIR /app/api
 
 # Expose port
 EXPOSE 8000

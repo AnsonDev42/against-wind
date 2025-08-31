@@ -24,10 +24,11 @@ class InterceptHandler(logging.Handler):
             level, record.getMessage()
         )
 
+
 def setup_logging():
     # Intercept everything at the root logger
     logging.root.handlers = [InterceptHandler()]
-    logging.root.setLevel(settings.LOG_LEVEL)
+    logging.root.setLevel(settings.LOG_LEVEL.upper())
 
     # Remove every other logger's handlers
     # and propagate to root logger
