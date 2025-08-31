@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { UploadForm } from '@/components/UploadForm'
-import { RouteMap } from '@/components/RouteMap'
-import { AnalysisPanel } from '@/components/AnalysisPanel'
+import { UploadForm } from '@/components/upload/UploadForm'
+import { RouteMap } from '@/components/map/RouteMap'
+import { AnalysisPanel } from '@/components/analysis/AnalysisPanel'
 import { Header } from '@/components/Header'
 import { loadDemoRoute, loadCachedAnalysisResults, cacheAnalysisResults, DEMO_ROUTE_CONFIG } from '@/lib/demo'
+import { Button } from "@/components/ui/button"
 
 export default function Home() {
   const [routeId, setRouteId] = useState<string | null>(null)
@@ -14,10 +15,10 @@ export default function Home() {
   const [isDemoMode, setIsDemoMode] = useState(false)
   const [isLoadingDemo, setIsLoadingDemo] = useState(true)
 
-  const handleRouteUploaded = (newRouteId: string) => {
-    setRouteId(newRouteId)
-    setAnalysisData(null)
-  }
+  // const handleRouteUploaded = (newRouteId: string) => {
+  //   setRouteId(newRouteId)
+  //   setAnalysisData(null)
+  // }
 
   const handleAnalysisStart = () => {
     setIsAnalyzing(true)
@@ -133,19 +134,18 @@ export default function Home() {
               <div className="space-y-4">
                 <UploadForm onRouteUploaded={handleNewRoute} />
                 <div className="text-center">
-                  <button
+                  <Button
                     onClick={handleResetToDemo}
-                    className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300"
+                    variant="secondary"
+                    // className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300"
                   >
                     Or try the demo route
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : (
               <AnalysisPanel
                 routeId={routeId}
-                isAnalyzing={isAnalyzing}
-                analysisData={analysisData}
                 onAnalysisStart={handleAnalysisStart}
                 onAnalysisComplete={handleAnalysisComplete}
                 onAnalysisError={handleAnalysisError}

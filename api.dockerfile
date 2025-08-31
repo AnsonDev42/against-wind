@@ -15,7 +15,6 @@ RUN uv sync --only-dev --frozen
 
 COPY api/ ./api/
 # Copy any additional required files at root level
-COPY main.py ./
 
 
 # Expose port
