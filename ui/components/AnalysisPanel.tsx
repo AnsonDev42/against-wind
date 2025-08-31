@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { PlayIcon, ArrowPathIcon, ClockIcon, CalendarIcon } from '@heroicons/react/24/outline'
 import { format } from 'date-fns'
+import {Button} from "@/components/ui/button";
 
 interface AnalysisPanelProps {
   routeId: string
@@ -154,12 +155,13 @@ export function AnalysisPanel({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Wind Analysis</h3>
-        <button
+        <Button
           onClick={onReset}
-          className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          variant="secondary"
+          // className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
         >
           Upload new route
-        </button>
+        </Button>
       </div>
 
       <div className="space-y-4">
