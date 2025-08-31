@@ -8,6 +8,7 @@ from api.app.api.routes import router
 from api.app.core.config import get_settings
 from api.app.core.logging import setup_logging
 from api.app.storage.db import init_db
+from api.app.storage.s3 import S3Storage
 
 
 @asynccontextmanager
@@ -21,6 +22,14 @@ async def lifespan(app: FastAPI):
     # Initialize database
     await init_db()
     logger.info("Database initialized")
+
+    # Ensure S3 bucket exists
+    try:
+        s3_storage = S3Storage()
+        s3_storage.ensure_bucket_exists()
+        logger.info("S3 storage checked and ready")
+    except Exception as e:
+        logger.critical(f"Failed to initialize S3 storage: {e}")
 
     yield
 
