@@ -1,8 +1,7 @@
-# Against Wind 🚴‍♂️💨
-
+# Against Wind
 A comprehensive wind analysis platform for cycling routes. Upload your GPX files and get detailed wind condition analysis to plan your rides better.
 
-## 🏗️ Architecture
+## Architecture
 
 This is a mono-repo containing:
 
@@ -13,7 +12,7 @@ This is a mono-repo containing:
 
 Key technologies include Python, FastAPI, Next.js, React, PostgreSQL, Redis, and Docker.
 
-## 🚀 Getting Started
+##  Getting Started
 
 This project can be run entirely with Docker or in a hybrid mode with the UI/API running locally.
 
@@ -88,19 +87,7 @@ Run the UI and API on your local machine for faster development, while keeping s
     pnpm dev
     ```
 
-## 🛠️ Development
-
-### Docker Commands
-
-Here are the most common Docker commands for managing the application:
-
--   **Start all services**: `docker-compose up -d`
--   **Stop all services**: `docker-compose down`
--   **Rebuild and restart all services**: `docker-compose up --build -d`
--   **View logs for all services**: `docker-compose logs -f`
--   **View logs for a specific service**: `docker-compose logs -f <service_name>` (e.g., `api` or `ui`)
--   **Check running services**: `docker-compose ps`
--   **Run a one-off command**: `docker-compose run --rm <service_name> <command>` (e.g., to run migrations: `docker-compose run --rm api uv run alembic upgrade head`)
+## Development
 
 ### Database Migrations
 
@@ -121,13 +108,6 @@ uv run pytest api/tests/
 # Frontend tests (from ui/ directory)
 cd ui && pnpm test
 ```
-
-## 🤝 Contributing
-
-1.  Fork the repository
-2.  Create a feature branch
-3.  Make your changes and add tests
-4.  Submit a pull request
 
 ## 📄 License
 
