@@ -4,6 +4,7 @@ import uuid
 import hashlib
 import logging
 import json
+import asyncio
 from pathlib import Path
 from api.app.domain.models import (
     AnalysisRequest,
@@ -229,10 +230,13 @@ class AnalysisService:
                     "message": f"Fetching wind data from {request.provider}...",
                 }
             )
+            # Small delay to ensure progress update is sent
+            await asyncio.sleep(0.1)
 
             provider = get_provider(request.provider)
             try:
-                wind_samples = provider.batch_wind(forecast_points)
+                # Update progress during fetch - await async call
+                wind_samples = await provider.batch_wind(forecast_points)
             except ValueError as e:
                 # Handle specific errors from the provider (e.g., historical data not available)
                 error_msg = str(e)
@@ -242,6 +246,10 @@ class AnalysisService:
                     )
                 else:
                     raise ValueError(f"Wind data provider error: {error_msg}")
+            except Exception as e:
+                # Handle other exceptions (timeouts, network errors, etc.)
+                logger.error(f"Error fetching wind data: {e}")
+                raise ValueError(f"Failed to fetch wind data: {str(e)}")
 
             if not wind_samples:
                 logger.error(
@@ -267,6 +275,16 @@ class AnalysisService:
             logger.info(
                 f"Retrieved {len(wind_samples)} wind samples from {request.provider}"
             )
+
+            # Progress update after fetching completes
+            yield ProgressEvent(
+                data={
+                    "stage": "fetching_wind_data",
+                    "progress": 0.4,
+                    "message": f"Retrieved {len(wind_samples)} wind samples",
+                }
+            )
+            await asyncio.sleep(0.1)
 
             # Step 4: Process wind data
             yield ProgressEvent(
@@ -790,8 +808,9 @@ class AnalysisService:
     async def _load_demo_route_into_memory(self) -> bool:
         """Load the demo GPX into in-memory storage with fixed ID if available.
 
-        Checks known local paths: `ui/public/demo-route.gpx` and
-        `api/tests/gpx_samples/glossop-sheffield-without-imestamp.gpx`.
+        Looks for demo GPX in multiple locations:
+        1. Relative to this module (bundled with deployment)
+        2. Project root locations (for local development)
         """
         try:
             # Get project root (assuming we're running from project root)
@@ -804,10 +823,11 @@ class AnalysisService:
             gpx_path = next((p for p in candidate_paths if p.exists()), None)
             if not gpx_path:
                 logger.error(
-                    f"Demo GPX file not found in known locations: {[str(p) for p in candidate_paths]}"
+                    f"Demo GPX file not found in any location. Tried: {[str(p) for p in candidate_paths]}"
                 )
                 return False
 
+            logger.info(f"Loading demo GPX from: {gpx_path}")
             gpx_text = gpx_path.read_text(encoding="utf-8")
 
             # Process GPX content

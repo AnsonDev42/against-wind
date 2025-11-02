@@ -184,6 +184,7 @@ async def analyze_route(
                 "Connection": "keep-alive",
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Headers": "Cache-Control",
+                "X-Accel-Buffering": "no",  # Disable proxy buffering for SSE
             },
         )
 

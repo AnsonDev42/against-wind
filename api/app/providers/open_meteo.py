@@ -22,11 +22,11 @@ class OpenMeteoProvider(BaseForecastProvider):
         """Open-Meteo supports global coverage."""
         return self._validate_coordinates(lat, lon)
 
-    def get_model_run_id(self) -> str:
+    async def get_model_run_id(self) -> str:
         """Get current model run ID from Open-Meteo."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
                     f"{self.base_url}/forecast",
                     params={
                         "latitude": 0,
@@ -48,7 +48,7 @@ class OpenMeteoProvider(BaseForecastProvider):
             # Fallback to current hour as model run ID
             return f"openmeteo_{datetime.now(timezone.utc).strftime('%Y%m%d_%H')}"
 
-    def batch_wind(self, points: List[ForecastPoint]) -> List[WindSample]:
+    async def batch_wind(self, points: List[ForecastPoint]) -> List[WindSample]:
         """Fetch wind data for multiple points from Open-Meteo."""
         if not points:
             return []
@@ -59,11 +59,11 @@ class OpenMeteoProvider(BaseForecastProvider):
         # Open-Meteo supports batch requests, but we'll implement single requests
         # for MVP and optimize later
         wind_samples = []
-        model_run_id = self.get_model_run_id()
+        model_run_id = await self.get_model_run_id()
 
         for point in unique_points:
             try:
-                samples = self._fetch_point_wind(point, model_run_id)
+                samples = await self._fetch_point_wind(point, model_run_id)
                 wind_samples.extend(samples)
                 logger.debug(
                     f"Fetched {len(samples)} samples for point {point.lat:.4f}, {point.lon:.4f}"
@@ -76,9 +76,7 @@ class OpenMeteoProvider(BaseForecastProvider):
 
         return wind_samples
 
-    from datetime import datetime, timezone, timedelta
-
-    def _fetch_point_wind(
+    async def _fetch_point_wind(
         self, point: ForecastPoint, model_run_id: str
     ) -> List[WindSample]:
         now = datetime.now(timezone.utc)
@@ -134,8 +132,8 @@ class OpenMeteoProvider(BaseForecastProvider):
                 f"Fetching ERA5 archive for {target_date} at {point.lat:.4f},{point.lon:.4f}"
             )
 
-        with httpx.Client(timeout=self.timeout) as client:
-            resp = client.get(api_url, params=params)
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            resp = await client.get(api_url, params=params)
             resp.raise_for_status()
             data = resp.json()
 
