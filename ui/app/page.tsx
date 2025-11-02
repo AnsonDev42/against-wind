@@ -5,7 +5,7 @@ import { UploadForm } from '@/components/upload/UploadForm'
 import { RouteMap } from '@/components/map/RouteMap'
 import { AnalysisPanel } from '@/components/analysis/AnalysisPanel'
 import { Header } from '@/components/Header'
-import { loadDemoRoute, loadCachedAnalysisResults, cacheAnalysisResults, DEMO_ROUTE_CONFIG } from '@/lib/demo'
+import { loadDemoRoute, cacheAnalysisResults, DEMO_ROUTE_CONFIG } from '@/lib/demo'
 import { Button } from "@/components/ui/button"
 
 export default function Home() {
@@ -28,7 +28,7 @@ export default function Home() {
   const handleAnalysisComplete = (data: any) => {
     setAnalysisData(data)
     setIsAnalyzing(false)
-    
+
     // Cache results if in demo mode
     if (isDemoMode) {
       cacheAnalysisResults(data)
@@ -44,16 +44,15 @@ export default function Home() {
   useEffect(() => {
     async function initializeDemo() {
       try {
+        // Wait 3.5 seconds before loading demo
+        await new Promise(resolve => setTimeout(resolve, 3500))
+
         const demoRouteId = await loadDemoRoute()
         if (demoRouteId) {
           setRouteId(demoRouteId)
           setIsDemoMode(true)
-          
-          // Try to load cached analysis results
-          const cachedResults = await loadCachedAnalysisResults(demoRouteId)
-          if (cachedResults) {
-            setAnalysisData(cachedResults)
-          }
+
+          // Don't load cached analysis results - let user click "Analyze Wind"
         }
       } catch (error) {
         console.error('Failed to initialize demo:', error)
@@ -61,7 +60,7 @@ export default function Home() {
         setIsLoadingDemo(false)
       }
     }
-    
+
     initializeDemo()
   }, [])
 
@@ -78,13 +77,8 @@ export default function Home() {
       if (demoRouteId) {
         setRouteId(demoRouteId)
         setIsDemoMode(true)
-        
-        const cachedResults = await loadCachedAnalysisResults(demoRouteId)
-        if (cachedResults) {
-          setAnalysisData(cachedResults)
-        } else {
-          setAnalysisData(null)
-        }
+        setAnalysisData(null)
+        // Don't load cached analysis results - let user click "Analyze Wind"
       }
     } catch (error) {
       console.error('Failed to reset to demo:', error)
@@ -96,7 +90,7 @@ export default function Home() {
   return (
     <div className="flex flex-col h-screen">
       <Header />
-      
+
       <div className="flex flex-1 overflow-hidden min-h-0">
         {/* Left Panel */}
         <div className="w-96 bg-white dark:bg-gray-800 shadow-lg flex flex-col">
@@ -114,12 +108,12 @@ export default function Home() {
             {isDemoMode && (
               <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                 <p className="text-sm text-blue-700 dark:text-blue-300">
-                  <strong>{DEMO_ROUTE_CONFIG.name}</strong><br/>
+                  <strong>{DEMO_ROUTE_CONFIG.name}</strong><br />
                   {DEMO_ROUTE_CONFIG.description}
                 </p>
               </div>
             )}
-            
+
             {isLoadingDemo ? (
               <div className="text-center py-8">
                 <div className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/30">
@@ -137,7 +131,7 @@ export default function Home() {
                   <Button
                     onClick={handleResetToDemo}
                     variant="secondary"
-                    // className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300"
+                  // className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300"
                   >
                     Or try the demo route
                   </Button>
@@ -158,7 +152,7 @@ export default function Home() {
               />
             )}
           </div>
-          
+
           {/* Analysis Results */}
           {analysisData && (
             <div className="flex-1 overflow-y-auto p-6 bg-white dark:bg-gray-800">
@@ -186,7 +180,7 @@ export default function Home() {
                     </div>
                   </div>
                 </div>
-                
+
                 {analysisData.summary?.longest_head_km > 0 && (
                   <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-4">
                     <h4 className="font-medium text-red-900 dark:text-red-100 mb-1">

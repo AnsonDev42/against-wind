@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import uuid
 import hashlib
 import logging
+import json
 from pathlib import Path
 from api.app.domain.models import (
     AnalysisRequest,
@@ -19,12 +20,22 @@ from api.app.domain.models import (
 from api.app.geo.gpx import GPXProcessor, RoutePoint
 from api.app.geo.interp import WindInterpolator
 from api.app.providers.open_meteo import get_provider
+from api.app.storage.db import (
+    RouteDB,
+    RouteSampleDB,
+    ForecastResultDB,
+    SegmentWindDB,
+    SummaryDB,
+    async_session_maker,
+)
 from api.app.storage.s3 import S3Storage
 from api.app.core.config import get_settings
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger(__name__)
 
-# In-memory storage for routes (temporary solution until database is implemented)
+# In-memory cache
 _route_storage: Dict[str, Route] = {}
 _route_points_storage: Dict[str, List[RoutePoint]] = {}
 _analysis_cache: Dict[str, dict] = {}
@@ -81,20 +92,83 @@ class AnalysisService:
             raise
 
     async def get_route(self, route_id: str) -> Optional[Route]:
-        """Get route by ID."""
+        """Get route by ID from database."""
         try:
-            route = _route_storage.get(route_id)
-            if not route:
-                logger.error(f"Route not found: {route_id}")
-            return route
+            # Check in-memory cache first
+            if route_id in _route_storage:
+                return _route_storage[route_id]
+
+            # Query database
+            if async_session_maker is None:
+                logger.error("Database not initialized")
+                return None
+
+            async with async_session_maker() as session:
+                stmt = select(RouteDB).where(RouteDB.id == route_id)
+                result = await session.execute(stmt)
+                route_db = result.scalar_one_or_none()
+
+                if not route_db:
+                    logger.error(f"Route not found in database: {route_id}")
+                    return None
+
+                # Convert database model to domain model
+                route = Route(
+                    id=route_db.id,
+                    user_id=route_db.user_id,
+                    gpx_url=route_db.gpx_url,
+                    bbox=json.loads(route_db.bbox),
+                    length_km=route_db.length_km,
+                    created_at=route_db.created_at,
+                    name=route_db.name,
+                )
+
+                # Cache in memory
+                _route_storage[route_id] = route
+                return route
+
         except Exception as e:
             logger.error(f"Error getting route {route_id}: {e}")
             return None
 
     async def get_route_results(self, route_id: str, limit: int = 10) -> List[dict]:
-        """Get recent analysis results for a route."""
-        # Placeholder - implement with actual database
-        return []
+        """Get recent analysis results for a route from database."""
+        try:
+            if async_session_maker is None:
+                logger.error("Database not initialized")
+                return []
+
+            async with async_session_maker() as session:
+                # Get recent forecast results for this route
+                stmt = (
+                    select(ForecastResultDB)
+                    .where(ForecastResultDB.route_id == route_id)
+                    .order_by(ForecastResultDB.created_at.desc())
+                    .limit(limit)
+                )
+                result = await session.execute(stmt)
+                results_db = result.scalars().all()
+
+                # Convert to dict format
+                results = []
+                for result_db in results_db:
+                    results.append(
+                        {
+                            "id": result_db.id,
+                            "route_id": result_db.route_id,
+                            "depart_time": result_db.depart_time.isoformat(),
+                            "provider": result_db.provider,
+                            "model_run_id": result_db.model_run_id,
+                            "created_at": result_db.created_at.isoformat(),
+                            "status": result_db.status,
+                        }
+                    )
+
+                return results
+
+        except Exception as e:
+            logger.error(f"Error getting route results for {route_id}: {e}")
+            return []
 
     async def analyze_route_stream(
         self, request: AnalysisRequest
@@ -499,24 +573,68 @@ class AnalysisService:
         return f"/api/v1/map/style/{uuid.uuid4()}"
 
     async def _load_route_points(self, route_id: str) -> Optional[List[RoutePoint]]:
-        """Load route points from storage."""
+        """Load route points from database or cache."""
         try:
-            route_points = _route_points_storage.get(route_id)
-            if not route_points:
-                # Attempt to auto-load the demo route if requested
-                if route_id == DEMO_ROUTE_ID:
-                    loaded = await self._load_demo_route_into_memory()
-                    if loaded:
-                        route_points = _route_points_storage.get(route_id)
-                if not route_points:
-                    logger.error(f"No route points found for route_id: {route_id}")
+            # Check in-memory cache first
+            if route_id in _route_points_storage:
+                route_points = _route_points_storage[route_id]
+                logger.info(
+                    f"Loaded {len(route_points)} route points from cache for route {route_id}"
+                )
+                return route_points
+
+            # Attempt to auto-load the demo route if requested
+            if route_id == DEMO_ROUTE_ID:
+                loaded = await self._load_demo_route_into_memory()
+                if loaded:
+                    route_points = _route_points_storage.get(route_id)
+                    if route_points:
+                        logger.info(
+                            f"Loaded {len(route_points)} route points from demo for route {route_id}"
+                        )
+                        return route_points
+
+            # Query database
+            if async_session_maker is None:
+                logger.error("Database not initialized")
+                return None
+
+            async with async_session_maker() as session:
+                stmt = (
+                    select(RouteSampleDB)
+                    .where(RouteSampleDB.route_id == route_id)
+                    .order_by(RouteSampleDB.seq)
+                )
+                result = await session.execute(stmt)
+                samples_db = result.scalars().all()
+
+                if not samples_db:
                     logger.error(
-                        f"Available route IDs: {list(_route_points_storage.keys())}"
+                        f"No route points found in database for route_id: {route_id}"
                     )
                     return None
 
-            logger.info(f"Loaded {len(route_points)} route points for route {route_id}")
-            return route_points
+                # Convert database samples to RoutePoint objects
+                route_points = []
+                for sample in samples_db:
+                    # Calculate estimated timestamp from departure + offset
+                    # Note: We don't store timestamp in route_samples, only offset
+                    route_point = RoutePoint(
+                        lat=sample.lat,
+                        lon=sample.lon,
+                        distance_m=sample.dist_m,
+                        bearing_deg=sample.bearing_deg,
+                        timestamp=None,  # Will be calculated during analysis
+                    )
+                    route_points.append(route_point)
+
+                # Cache in memory
+                _route_points_storage[route_id] = route_points
+                logger.info(
+                    f"Loaded {len(route_points)} route points from database for route {route_id}"
+                )
+                return route_points
+
         except Exception as e:
             logger.error(f"Error loading route points for {route_id}: {e}")
             return None
@@ -524,12 +642,61 @@ class AnalysisService:
     async def _store_route(self, route: Route, route_points: List[RoutePoint]):
         """Store route and route points in database."""
         try:
-            # Store in memory for now
-            _route_storage[route.id] = route
-            _route_points_storage[route.id] = route_points
-            logger.info(f"Stored route {route.id} with {len(route_points)} points")
+            if async_session_maker is None:
+                logger.warning("Database not initialized, storing only in memory")
+                _route_storage[route.id] = route
+                _route_points_storage[route.id] = route_points
+                return
+
+            async with async_session_maker() as session:
+                # Create route database record
+                route_db = RouteDB(
+                    id=route.id,
+                    user_id=route.user_id,
+                    gpx_url=route.gpx_url,
+                    bbox=json.dumps(route.bbox),
+                    length_km=route.length_km,
+                    created_at=route.created_at,
+                    name=route.name,
+                )
+                session.add(route_db)
+
+                # Create route sample records (calculate average speed for eta_offset_s)
+                avg_speed_kmh = 25.0  # Default cycling speed
+                for i, point in enumerate(route_points):
+                    eta_offset_s = int(
+                        (point.distance_m / 1000.0 / avg_speed_kmh) * 3600
+                    )
+                    sample_db = RouteSampleDB(
+                        route_id=route.id,
+                        seq=i,
+                        lat=point.lat,
+                        lon=point.lon,
+                        dist_m=point.distance_m,
+                        bearing_deg=point.bearing_deg or 0.0,
+                        eta_offset_s=eta_offset_s,
+                    )
+                    session.add(sample_db)
+
+                try:
+                    await session.commit()
+                    logger.info(
+                        f"Stored route {route.id} with {len(route_points)} points in database"
+                    )
+                except IntegrityError:
+                    # Route already exists, that's OK
+                    await session.rollback()
+                    logger.info(f"Route {route.id} already exists in database")
+
+                # Also store in memory cache for quick access
+                _route_storage[route.id] = route
+                _route_points_storage[route.id] = route_points
+
         except Exception as e:
             logger.error(f"Error storing route {route.id}: {e}")
+            # Still cache in memory even if database fails
+            _route_storage[route.id] = route
+            _route_points_storage[route.id] = route_points
             raise
 
     async def _store_analysis_result(
@@ -554,7 +721,63 @@ class AnalysisService:
             segment.result_id = result.id
         summary.result_id = result.id
 
-        # Placeholder - implement with actual database
+        # Store in database
+        if async_session_maker is None:
+            logger.warning("Database not initialized, skipping result storage")
+            return result
+
+        try:
+            async with async_session_maker() as session:
+                # Create forecast result record
+                result_db = ForecastResultDB(
+                    id=result.id,
+                    route_id=result.route_id,
+                    depart_time=result.depart_time,
+                    provider=result.provider,
+                    model_run_id=result.model_run_id,
+                    created_at=result.created_at,
+                    status=result.status,
+                )
+                session.add(result_db)
+
+                # Create segment wind records
+                for segment in segments:
+                    segment_db = SegmentWindDB(
+                        result_id=segment.result_id,
+                        seq=segment.seq,
+                        time_utc=segment.time_utc,
+                        wind_dir_deg10m=segment.wind_dir_deg10m,
+                        wind_ms10m=segment.wind_ms10m,
+                        wind_ms1p5m=segment.wind_ms1p5m,
+                        yaw_deg=segment.yaw_deg,
+                        wind_class=segment.wind_class.value,
+                        gust_ms=segment.gust_ms,
+                        confidence=segment.confidence,
+                    )
+                    session.add(segment_db)
+
+                # Create summary record
+                summary_db = SummaryDB(
+                    result_id=summary.result_id,
+                    head_pct=summary.head_pct,
+                    tail_pct=summary.tail_pct,
+                    cross_pct=summary.cross_pct,
+                    longest_head_km=summary.longest_head_km,
+                    window_best_depart=summary.window_best_depart,
+                    provider_spread=summary.provider_spread,
+                    notes=summary.notes,
+                )
+                session.add(summary_db)
+
+                await session.commit()
+                logger.info(
+                    f"Stored analysis result {result.id} with {len(segments)} segments in database"
+                )
+
+        except Exception as e:
+            logger.error(f"Error storing analysis result {result.id}: {e}")
+            # Don't raise - analysis is still usable even if storage fails
+
         return result
 
     def _cache_key(self, route_id: str, provider: str, depart_time: datetime) -> str:
