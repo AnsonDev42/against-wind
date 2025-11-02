@@ -17,6 +17,13 @@ export function useRouteMetadata(routeId: string) {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(false)
 
+  // Set fixed demo time for demo route to enable consistent caching
+  useEffect(() => {
+    if (routeId === 'demo-glossop-sheffield') {
+      setDepartTime('2024-12-15T10:00')
+    }
+  }, [routeId])
+
   useEffect(() => {
     const fetchRouteMetadata = async () => {
       if (!routeId) return
