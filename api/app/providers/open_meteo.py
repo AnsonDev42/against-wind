@@ -1,4 +1,5 @@
 import httpx
+import asyncio
 from typing import List
 from datetime import datetime, timezone, timedelta
 from api.app.providers.base import BaseForecastProvider
@@ -56,24 +57,41 @@ class OpenMeteoProvider(BaseForecastProvider):
         # Deduplicate points to minimize API calls
         unique_points = self._deduplicate_points(points)
 
-        # Open-Meteo supports batch requests, but we'll implement single requests
-        # for MVP and optimize later
-        wind_samples = []
+        logger.info(f"Fetching wind data for {len(unique_points)} unique points")
+
         model_run_id = await self.get_model_run_id()
 
-        for point in unique_points:
-            try:
-                samples = await self._fetch_point_wind(point, model_run_id)
-                wind_samples.extend(samples)
-                logger.debug(
-                    f"Fetched {len(samples)} samples for point {point.lat:.4f}, {point.lon:.4f}"
-                )
-            except Exception as e:
-                logger.error(
-                    f"Failed to fetch wind for point {point.lat}, {point.lon}: {e}"
-                )
-                continue
+        # Make concurrent requests with asyncio.gather for better performance
+        # Process in batches to avoid overwhelming the API
+        batch_size = 10  # Fetch 10 points concurrently
+        wind_samples = []
 
+        for i in range(0, len(unique_points), batch_size):
+            batch = unique_points[i : i + batch_size]
+            logger.info(
+                f"Fetching batch {i//batch_size + 1}/{(len(unique_points) + batch_size - 1)//batch_size}"
+            )
+
+            # Create tasks for concurrent fetching
+            tasks = [self._fetch_point_wind(point, model_run_id) for point in batch]
+
+            # Execute all tasks concurrently
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Process results
+            for point, result in zip(batch, results):
+                if isinstance(result, Exception):
+                    logger.error(
+                        f"Failed to fetch wind for point {point.lat:.4f}, {point.lon:.4f}: {result}"
+                    )
+                    continue
+
+                wind_samples.extend(result)
+                logger.debug(
+                    f"Fetched {len(result)} samples for point {point.lat:.4f}, {point.lon:.4f}"
+                )
+
+        logger.info(f"Total wind samples fetched: {len(wind_samples)}")
         return wind_samples
 
     async def _fetch_point_wind(
@@ -132,7 +150,11 @@ class OpenMeteoProvider(BaseForecastProvider):
                 f"Fetching ERA5 archive for {target_date} at {point.lat:.4f},{point.lon:.4f}"
             )
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        # Use a longer timeout for individual requests (default is 30s which might be too short)
+        # Each request should be allowed to complete, with overall batch timeout managed at higher level
+        timeout = httpx.Timeout(60.0, connect=10.0)  # 60s total, 10s connect
+
+        async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.get(api_url, params=params)
             resp.raise_for_status()
             data = resp.json()
