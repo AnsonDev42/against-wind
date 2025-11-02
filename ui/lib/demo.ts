@@ -9,7 +9,7 @@ export const DEMO_ROUTE_CONFIG = {
 
 export async function loadDemoRoute(): Promise<string | null> {
   try {
-    // Always return the static demo route ID for consistency
+    // The backend auto-loads this route from its bundled demo GPX file
     const demoRouteId = 'demo-glossop-sheffield'
     
     // Cache the route ID for consistency with other functions
