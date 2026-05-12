@@ -112,12 +112,12 @@ export default function Home() {
   }
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="flex flex-col min-h-screen lg:h-screen">
       <Header />
 
-      <div className="flex flex-1 overflow-hidden min-h-0">
+      <div className="flex flex-1 min-h-0 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
         {/* Left Panel */}
-        <div className="w-96 bg-white dark:bg-gray-800 shadow-lg flex flex-col">
+        <div className="w-full bg-white dark:bg-gray-800 shadow-lg flex flex-col lg:w-96 lg:shrink-0">
           <div className="p-6 border-b">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
@@ -222,7 +222,7 @@ export default function Home() {
         </div>
 
         {/* Map */}
-        <div className="flex-1 min-h-0">
+        <div className="min-h-[420px] flex-1 lg:min-h-0">
           <RouteMap
             routeId={routeId}
             analysisData={analysisData}

@@ -17,6 +17,9 @@ interface PerformAnalysisParams {
   timingMode: TimingMode
   useHistoricalMode: boolean
   estimatedDuration: number
+  ftpWattsPerKg: number
+  riderWeightKg: number
+  bikeWeightKg: number
 }
 
 export function useAnalysis({ onAnalysisStart, onAnalysisPartial, onAnalysisComplete, onAnalysisError }: UseAnalysisProps) {
@@ -29,7 +32,10 @@ export function useAnalysis({ onAnalysisStart, onAnalysisPartial, onAnalysisComp
     provider, 
     timingMode, 
     useHistoricalMode, 
-    estimatedDuration 
+    estimatedDuration,
+    ftpWattsPerKg,
+    riderWeightKg,
+    bikeWeightKg,
   }: PerformAnalysisParams) => {
     onAnalysisStart()
     setIsAnalyzing(true)
@@ -42,12 +48,18 @@ export function useAnalysis({ onAnalysisStart, onAnalysisPartial, onAnalysisComp
         route_id: routeId,
         depart: departISO,
         provider: provider,
-        use_gpx_timestamps: (timingMode === 'gpx_timestamps').toString(),
+        timing_mode: timingMode,
         use_historical_mode: (useHistoricalMode && timingMode === 'gpx_timestamps').toString(),
       })
       
-      if (timingMode === 'estimated') {
+      if (timingMode === 'manual_duration') {
         params.append('estimated_duration_hours', estimatedDuration.toString())
+      }
+
+      if (timingMode === 'power') {
+        params.append('ftp_w_per_kg', ftpWattsPerKg.toString())
+        params.append('rider_weight_kg', riderWeightKg.toString())
+        params.append('bike_weight_kg', bikeWeightKg.toString())
       }
       
       const url = `${process.env.NEXT_PUBLIC_API_URL}/api/v1/analyze?${params.toString()}`

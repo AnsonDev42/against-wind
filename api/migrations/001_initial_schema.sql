@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS route_samples (
     lon FLOAT NOT NULL,
     dist_m FLOAT NOT NULL,
     bearing_deg FLOAT NOT NULL,
+    elevation_m FLOAT,
+    grade_pct FLOAT,
     eta_offset_s INTEGER NOT NULL,
     UNIQUE(route_id, seq)
 );

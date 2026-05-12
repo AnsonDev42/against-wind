@@ -5,7 +5,7 @@ import { RouteMetadata, TimingMode } from '@/lib/types/analysis'
 
 export function useRouteMetadata(routeId: string) {
   const [routeMetadata, setRouteMetadata] = useState<RouteMetadata | null>(null)
-  const [timingMode, setTimingMode] = useState<TimingMode>('manual')
+  const [timingMode, setTimingMode] = useState<TimingMode>('power')
   const [departTime, setDepartTime] = useState(() => {
     const tomorrow = new Date()
     tomorrow.setDate(tomorrow.getDate() + 1)
@@ -14,6 +14,9 @@ export function useRouteMetadata(routeId: string) {
   })
   const [useHistoricalMode, setUseHistoricalMode] = useState<boolean>(false)
   const [estimatedDuration, setEstimatedDuration] = useState<number>(3)
+  const [ftpWattsPerKg, setFtpWattsPerKg] = useState<number>(2.5)
+  const [riderWeightKg, setRiderWeightKg] = useState<number>(75)
+  const [bikeWeightKg, setBikeWeightKg] = useState<number>(10)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(false)
 
@@ -51,7 +54,7 @@ export function useRouteMetadata(routeId: string) {
               }
             }
           } else {
-            setTimingMode('manual')
+            setTimingMode('power')
           }
 
           // Set estimated duration from metadata
@@ -82,6 +85,12 @@ export function useRouteMetadata(routeId: string) {
     setUseHistoricalMode,
     estimatedDuration,
     setEstimatedDuration,
+    ftpWattsPerKg,
+    setFtpWattsPerKg,
+    riderWeightKg,
+    setRiderWeightKg,
+    bikeWeightKg,
+    setBikeWeightKg,
     isLoading,
     error,
   }

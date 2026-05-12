@@ -43,6 +43,8 @@ class RouteSampleDB(Base):
     lon: Mapped[float] = mapped_column(Float, nullable=False)
     dist_m: Mapped[float] = mapped_column(Float, nullable=False)
     bearing_deg: Mapped[float] = mapped_column(Float, nullable=False)
+    elevation_m: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    grade_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     eta_offset_s: Mapped[int] = mapped_column(Integer, nullable=False)
 
 

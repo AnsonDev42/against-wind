@@ -4,7 +4,6 @@ import boto3
 import pytest
 from botocore.exceptions import ClientError
 
-
 os.environ.setdefault(
     "DATABASE_URL", "postgresql://postgres:password@localhost:5432/against_wind"
 )

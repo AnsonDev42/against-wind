@@ -3,7 +3,6 @@ import React from 'react';
 interface MapOverlayProps {
   isAnalyzing: boolean;
   routeId: string | null;
-  isMapboxTokenSet: boolean;
 }
 
 const Overlay = ({ children }: { children: React.ReactNode }) => (
@@ -12,18 +11,7 @@ const Overlay = ({ children }: { children: React.ReactNode }) => (
   </div>
 );
 
-export function MapOverlay({ isAnalyzing, routeId, isMapboxTokenSet }: MapOverlayProps) {
-  if (!isMapboxTokenSet) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-gray-100">
-        <div className="text-center">
-          <p className="text-gray-600 mb-2">Map requires Mapbox token</p>
-          <p className="text-sm text-gray-500">Set NEXT_PUBLIC_MAPBOX_TOKEN environment variable</p>
-        </div>
-      </div>
-    );
-  }
-
+export function MapOverlay({ isAnalyzing, routeId }: MapOverlayProps) {
   if (isAnalyzing) {
     return (
       <Overlay>

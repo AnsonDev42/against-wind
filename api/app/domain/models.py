@@ -1,4 +1,4 @@
-from typing import AsyncIterator, Protocol, Optional, Dict, Any, List
+from typing import AsyncIterator, Protocol, Optional, Dict, Any, List, Literal
 from datetime import datetime
 from pydantic import BaseModel, Field
 from enum import Enum
@@ -103,12 +103,12 @@ class AnalysisRequest(BaseModel):
     route_id: str
     depart_time: datetime
     provider: str = "open-meteo"
-    speed_profile: str = "preset"
-    use_gpx_timestamps: bool = False  # Use timestamps from GPX file if available
-    estimated_duration_hours: Optional[float] = None  # For routes without timestamps
-    use_historical_mode: bool = (
-        False  # Use GPX start time as actual departure for historical analysis
-    )
+    timing_mode: Literal["power", "manual_duration", "gpx_timestamps"] = "power"
+    estimated_duration_hours: Optional[float] = Field(None, gt=0, le=48)
+    ftp_w_per_kg: Optional[float] = Field(None, gt=0, le=10)
+    rider_weight_kg: Optional[float] = Field(None, gt=0, le=250)
+    bike_weight_kg: Optional[float] = Field(None, ge=0, le=80)
+    use_historical_mode: bool = False
 
 
 class ForecastResult(BaseModel):

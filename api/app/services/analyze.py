@@ -19,6 +19,11 @@ from api.app.domain.models import (
     PartialResultEvent,
     WindClass,
 )
+from api.app.domain.time_estimation import (
+    RiderPowerProfile,
+    build_forecast_points_from_offsets,
+    estimate_route_timing,
+)
 from api.app.geo.gpx import GPXProcessor, RoutePoint
 from api.app.geo.interp import WindInterpolator
 from api.app.providers.open_meteo import get_provider
@@ -44,6 +49,7 @@ _analysis_cache: Dict[str, dict] = {}
 
 # Fixed demo route ID used by the UI
 DEMO_ROUTE_ID = "demo-glossop-sheffield"
+WIND_REFETCH_THRESHOLD_SECONDS = 900
 
 
 class AnalysisService:
@@ -178,9 +184,7 @@ class AnalysisService:
         """Analyze route and stream progress updates."""
         try:
             # Attempt to serve from cache first
-            cache_key = self._cache_key(
-                request.route_id, request.provider, request.depart_time
-            )
+            cache_key = self._cache_key(request)
             if cache_key in _analysis_cache:
                 cached = _analysis_cache[cache_key]
                 yield ProgressEvent(
@@ -215,12 +219,8 @@ class AnalysisService:
                 }
             )
 
-            forecast_points = self._generate_forecast_points(
-                route_points,
-                request.depart_time,
-                request.use_gpx_timestamps,
-                request.estimated_duration_hours,
-                request.use_historical_mode,
+            forecast_points, timing_estimate = self._build_initial_timing(
+                route_points, request
             )
 
             # Step 3: Fetch wind data
@@ -345,6 +345,28 @@ class AnalysisService:
                         "No wind data available for the requested time and location"
                     )
 
+            if request.timing_mode == "power":
+                yield ProgressEvent(
+                    data={
+                        "stage": "refining_eta",
+                        "progress": 0.45,
+                        "message": "Refining ETA with elevation and wind...",
+                    }
+                )
+                (
+                    forecast_points,
+                    wind_samples,
+                    timing_estimate,
+                ) = await self._refine_power_timing_with_wind(
+                    provider,
+                    route_points,
+                    request,
+                    forecast_points,
+                    wind_samples,
+                    timing_estimate,
+                )
+                segments = []
+
             logger.info(
                 f"Retrieved {len(wind_samples)} wind samples from {request.provider}"
             )
@@ -402,6 +424,7 @@ class AnalysisService:
                 "segments": [seg.model_dump() for seg in segments],
                 "summary": summary.model_dump(),
                 "map_style_url": self._generate_map_style_url(segments),
+                "timing": timing_estimate,
             }
             # Cache the completed payload
             _analysis_cache[cache_key] = payload
@@ -421,134 +444,234 @@ class AnalysisService:
             logger.error(f"Analysis failed: {e}")
             yield ErrorEvent(data={"error": "analysis_failed", "message": str(e)})
 
-    def _generate_forecast_points(
+    def _build_initial_timing(
+        self, route_points: List[RoutePoint], request: AnalysisRequest
+    ) -> tuple[List[ForecastPoint], dict]:
+        if request.timing_mode == "gpx_timestamps":
+            forecast_points = self._forecast_points_from_gpx_timestamps(
+                route_points, request.depart_time, request.use_historical_mode
+            )
+            model = "gpx_historical" if request.use_historical_mode else "gpx_shifted"
+            return forecast_points, self._build_timing_payload(
+                forecast_points, request.depart_time, model, []
+            )
+
+        if request.timing_mode == "manual_duration":
+            if request.estimated_duration_hours is None:
+                raise ValueError(
+                    "estimated_duration_hours is required for manual_duration timing"
+                )
+            forecast_points = self._forecast_points_from_duration(
+                route_points, request.depart_time, request.estimated_duration_hours
+            )
+            return forecast_points, self._build_timing_payload(
+                forecast_points, request.depart_time, "manual_duration", []
+            )
+
+        return self._generate_power_forecast_points(
+            route_points, request.depart_time, request
+        )
+
+    def _forecast_points_from_gpx_timestamps(
         self,
         route_points: List[RoutePoint],
         depart_time: datetime,
-        use_gpx_timestamps: bool = False,
-        estimated_duration_hours: Optional[float] = None,
-        use_historical_mode: bool = False,
+        use_historical_mode: bool,
     ) -> List[ForecastPoint]:
-        """Generate forecast points from route points with different timing modes."""
-        forecast_points = []
-
-        if use_historical_mode and any(p.timestamp for p in route_points):
-            # Mode 1: Historical analysis - use GPX timestamps as-is for historical wind data
-            timestamped_points = [p for p in route_points if p.timestamp is not None]
-            if timestamped_points:
-                logger.info(
-                    "Using historical mode - GPX timestamps used as actual times for historical wind analysis"
-                )
-
-                for point in route_points:
-                    if point.timestamp is not None:
-                        # Use GPX timestamp directly for historical analysis
-                        point_time = point.timestamp
-                    else:
-                        # Fallback: interpolate based on surrounding timestamped points
-                        # Find nearest timestamped points before and after
-                        before_points = [
-                            p
-                            for p in timestamped_points
-                            if p.distance_m <= point.distance_m
-                        ]
-                        after_points = [
-                            p
-                            for p in timestamped_points
-                            if p.distance_m > point.distance_m
-                        ]
-
-                        if before_points and after_points:
-                            before_point = max(
-                                before_points, key=lambda p: p.distance_m
-                            )
-                            after_point = min(after_points, key=lambda p: p.distance_m)
-
-                            # Linear interpolation between timestamps
-                            distance_ratio = (
-                                point.distance_m - before_point.distance_m
-                            ) / (after_point.distance_m - before_point.distance_m)
-                            time_diff = (
-                                after_point.timestamp - before_point.timestamp
-                            ).total_seconds()
-                            interpolated_seconds = time_diff * distance_ratio
-                            point_time = before_point.timestamp + timedelta(
-                                seconds=interpolated_seconds
-                            )
-                        elif before_points:
-                            # Use last known timestamp
-                            point_time = max(
-                                before_points, key=lambda p: p.distance_m
-                            ).timestamp
-                        elif after_points:
-                            # Use first known timestamp
-                            point_time = min(
-                                after_points, key=lambda p: p.distance_m
-                            ).timestamp
-                        else:
-                            # Fallback to distance-based calculation from GPX start
-                            gpx_start_time = min(
-                                p.timestamp for p in timestamped_points
-                            )
-                            avg_speed_kmh = 25.0
-                            eta_hours = point.distance_m / 1000.0 / avg_speed_kmh
-                            point_time = gpx_start_time + timedelta(hours=eta_hours)
-
-                    forecast_points.append(
-                        ForecastPoint(lat=point.lat, lon=point.lon, time_utc=point_time)
-                    )
-        elif use_gpx_timestamps and any(p.timestamp for p in route_points):
-            # Mode 2: Use GPX timestamps with offset from departure time
-            timestamped_points = [p for p in route_points if p.timestamp is not None]
-            if timestamped_points:
-                # Calculate offset between desired departure time and GPX start time
-                gpx_start_time = min(p.timestamp for p in timestamped_points)
-                time_offset = depart_time - gpx_start_time
-
-                for point in route_points:
-                    if point.timestamp is not None:
-                        # Use GPX timestamp with offset
-                        point_time = point.timestamp + time_offset
-                    else:
-                        # Fallback to distance-based calculation for points without timestamps
-                        avg_speed_kmh = 25.0
-                        eta_hours = point.distance_m / 1000.0 / avg_speed_kmh
-                        point_time = depart_time + timedelta(hours=eta_hours)
-
-                    forecast_points.append(
-                        ForecastPoint(lat=point.lat, lon=point.lon, time_utc=point_time)
-                    )
-        elif estimated_duration_hours is not None:
-            # Mode 2: Use estimated duration to distribute time across route
-            total_distance_km = (
-                route_points[-1].distance_m / 1000.0 if route_points else 0
+        timestamped_points = [
+            point for point in route_points if point.timestamp is not None
+        ]
+        if not timestamped_points:
+            raise ValueError(
+                "GPX timestamp timing was requested, but the route has no timestamps"
             )
 
-            for point in route_points:
-                # Calculate time based on distance ratio and estimated duration
-                distance_ratio = (
-                    point.distance_m / (total_distance_km * 1000.0)
-                    if total_distance_km > 0
+        gpx_start_time = min(point.timestamp for point in timestamped_points)
+        time_offset = (
+            timedelta(0) if use_historical_mode else depart_time - gpx_start_time
+        )
+
+        return [
+            ForecastPoint(
+                lat=point.lat,
+                lon=point.lon,
+                time_utc=self._timestamp_for_route_point(point, timestamped_points)
+                + time_offset,
+            )
+            for point in route_points
+        ]
+
+    def _timestamp_for_route_point(
+        self, point: RoutePoint, timestamped_points: List[RoutePoint]
+    ) -> datetime:
+        if point.timestamp is not None:
+            return point.timestamp
+
+        before_points = [
+            candidate
+            for candidate in timestamped_points
+            if candidate.distance_m <= point.distance_m
+        ]
+        after_points = [
+            candidate
+            for candidate in timestamped_points
+            if candidate.distance_m > point.distance_m
+        ]
+
+        if before_points and after_points:
+            before_point = max(
+                before_points, key=lambda candidate: candidate.distance_m
+            )
+            after_point = min(after_points, key=lambda candidate: candidate.distance_m)
+            distance_delta = after_point.distance_m - before_point.distance_m
+            if distance_delta <= 0:
+                return before_point.timestamp
+            distance_ratio = (
+                point.distance_m - before_point.distance_m
+            ) / distance_delta
+            time_delta_s = (
+                after_point.timestamp - before_point.timestamp
+            ).total_seconds()
+            return before_point.timestamp + timedelta(
+                seconds=time_delta_s * distance_ratio
+            )
+
+        if before_points:
+            return max(
+                before_points, key=lambda candidate: candidate.distance_m
+            ).timestamp
+
+        return min(after_points, key=lambda candidate: candidate.distance_m).timestamp
+
+    def _forecast_points_from_duration(
+        self,
+        route_points: List[RoutePoint],
+        depart_time: datetime,
+        duration_hours: float,
+    ) -> List[ForecastPoint]:
+        total_distance_m = route_points[-1].distance_m if route_points else 0.0
+        duration_s = duration_hours * 3600.0
+
+        return [
+            ForecastPoint(
+                lat=point.lat,
+                lon=point.lon,
+                time_utc=depart_time
+                + timedelta(
+                    seconds=duration_s * (point.distance_m / total_distance_m)
+                    if total_distance_m > 0
                     else 0
-                )
-                eta_hours = distance_ratio * estimated_duration_hours
-                point_time = depart_time + timedelta(hours=eta_hours)
+                ),
+            )
+            for point in route_points
+        ]
 
-                forecast_points.append(
-                    ForecastPoint(lat=point.lat, lon=point.lon, time_utc=point_time)
-                )
-        else:
-            # Mode 3: Default constant speed calculation
-            for point in route_points:
-                avg_speed_kmh = 25.0  # Average cycling speed
-                eta_hours = point.distance_m / 1000.0 / avg_speed_kmh
-                point_time = depart_time + timedelta(hours=eta_hours)
+    def _generate_power_forecast_points(
+        self,
+        route_points: List[RoutePoint],
+        depart_time: datetime,
+        request: AnalysisRequest,
+        wind_samples: Optional[List] = None,
+        reference_points: Optional[List[ForecastPoint]] = None,
+    ) -> tuple[List[ForecastPoint], dict]:
+        profile = self._rider_power_profile(request)
+        estimate = estimate_route_timing(
+            route_points,
+            profile,
+            wind_samples=wind_samples,
+            reference_points=reference_points,
+        )
+        forecast_points = build_forecast_points_from_offsets(
+            route_points, depart_time, estimate.eta_offsets_s
+        )
+        return forecast_points, self._build_timing_payload(
+            forecast_points, depart_time, estimate.model, estimate.warnings
+        )
 
-                forecast_points.append(
-                    ForecastPoint(lat=point.lat, lon=point.lon, time_utc=point_time)
-                )
+    async def _refine_power_timing_with_wind(
+        self,
+        provider,
+        route_points: List[RoutePoint],
+        request: AnalysisRequest,
+        forecast_points: List[ForecastPoint],
+        wind_samples: List,
+        timing_estimate: dict,
+    ) -> tuple[List[ForecastPoint], List, dict]:
+        refined_points, refined_timing = self._generate_power_forecast_points(
+            route_points,
+            request.depart_time,
+            request,
+            wind_samples=wind_samples,
+            reference_points=forecast_points,
+        )
 
-        return forecast_points
+        if not self._forecast_points_shifted(forecast_points, refined_points):
+            return refined_points, wind_samples, refined_timing
+
+        try:
+            refined_wind_samples = await provider.batch_wind(refined_points)
+        except Exception as e:
+            logger.warning(
+                "Wind-aware ETA refetch failed, using initial wind samples: %s", e
+            )
+            return forecast_points, wind_samples, timing_estimate
+
+        if not refined_wind_samples:
+            return forecast_points, wind_samples, timing_estimate
+
+        return refined_points, refined_wind_samples, refined_timing
+
+    def _rider_power_profile(self, request: AnalysisRequest) -> RiderPowerProfile:
+        return RiderPowerProfile(
+            ftp_w_per_kg=request.ftp_w_per_kg or RiderPowerProfile.ftp_w_per_kg,
+            rider_weight_kg=request.rider_weight_kg
+            or RiderPowerProfile.rider_weight_kg,
+            bike_weight_kg=(
+                request.bike_weight_kg
+                if request.bike_weight_kg is not None
+                else RiderPowerProfile.bike_weight_kg
+            ),
+        )
+
+    def _forecast_points_shifted(
+        self,
+        previous_points: List[ForecastPoint],
+        next_points: List[ForecastPoint],
+        threshold_seconds: int = WIND_REFETCH_THRESHOLD_SECONDS,
+    ) -> bool:
+        if len(previous_points) != len(next_points):
+            return True
+        for previous, next_point in zip(previous_points, next_points):
+            if (
+                abs((next_point.time_utc - previous.time_utc).total_seconds())
+                >= threshold_seconds
+            ):
+                return True
+        return False
+
+    def _build_timing_payload(
+        self,
+        forecast_points: List[ForecastPoint],
+        depart_time: datetime,
+        model: str,
+        warnings: List[str],
+    ) -> dict:
+        if not forecast_points:
+            return {
+                "model": model,
+                "estimated_duration_hours": 0,
+                "estimated_completion_time": depart_time,
+                "warnings": warnings,
+            }
+
+        completion_time = forecast_points[-1].time_utc
+        return {
+            "model": model,
+            "estimated_duration_hours": (completion_time - depart_time).total_seconds()
+            / 3600.0,
+            "estimated_completion_time": completion_time,
+            "warnings": warnings,
+        }
 
     async def _process_wind_segments(
         self,
@@ -715,8 +838,10 @@ class AnalysisService:
                     route_point = RoutePoint(
                         lat=sample.lat,
                         lon=sample.lon,
+                        elevation=sample.elevation_m,
                         distance_m=sample.dist_m,
                         bearing_deg=sample.bearing_deg,
+                        grade_pct=sample.grade_pct,
                         timestamp=None,  # Will be calculated during analysis
                     )
                     route_points.append(route_point)
@@ -767,6 +892,8 @@ class AnalysisService:
                         lon=point.lon,
                         dist_m=point.distance_m,
                         bearing_deg=point.bearing_deg or 0.0,
+                        elevation_m=point.elevation,
+                        grade_pct=point.grade_pct,
                         eta_offset_s=eta_offset_s,
                     )
                     session.add(sample_db)
@@ -873,12 +1000,20 @@ class AnalysisService:
 
         return result
 
-    def _cache_key(self, route_id: str, provider: str, depart_time: datetime) -> str:
+    def _cache_key(self, request: AnalysisRequest) -> str:
         """Normalize cache key to the hour to increase hit rate."""
-        depart_hour = depart_time.replace(
-            minute=0, second=0, microsecond=0, tzinfo=depart_time.tzinfo
+        depart_hour = request.depart_time.replace(
+            minute=0, second=0, microsecond=0, tzinfo=request.depart_time.tzinfo
         )
-        return f"{route_id}:{provider}:{depart_hour.isoformat()}"
+        rider_key = (
+            f"{request.timing_mode}:"
+            f"{request.estimated_duration_hours}:"
+            f"{request.ftp_w_per_kg}:"
+            f"{request.rider_weight_kg}:"
+            f"{request.bike_weight_kg}:"
+            f"{request.use_historical_mode}"
+        )
+        return f"{request.route_id}:{request.provider}:{depart_hour.isoformat()}:{rider_key}"
 
     async def _load_demo_route_into_memory(self) -> bool:
         """Load the demo GPX into in-memory storage with fixed ID if available.
