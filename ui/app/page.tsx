@@ -35,6 +35,29 @@ export default function Home() {
     }
   }
 
+  const handleAnalysisPartial = (data: any) => {
+    setIsAnalyzing(true)
+    setAnalysisData((previous: any) => {
+      const segmentsBySeq = new Map<number, any>()
+
+      for (const segment of previous?.segments || []) {
+        segmentsBySeq.set(segment.seq, segment)
+      }
+      for (const segment of data.segments || []) {
+        segmentsBySeq.set(segment.seq, segment)
+      }
+
+      return {
+        ...previous,
+        is_partial: true,
+        processed: data.processed,
+        total: data.total,
+        segments: Array.from(segmentsBySeq.values()).sort((a, b) => a.seq - b.seq),
+        summary: data.summary || previous?.summary,
+      }
+    })
+  }
+
   const handleAnalysisError = (error: string) => {
     console.error('Analysis error:', error)
     setIsAnalyzing(false)
@@ -141,6 +164,7 @@ export default function Home() {
               <AnalysisPanel
                 routeId={routeId}
                 onAnalysisStart={handleAnalysisStart}
+                onAnalysisPartial={handleAnalysisPartial}
                 onAnalysisComplete={handleAnalysisComplete}
                 onAnalysisError={handleAnalysisError}
                 onReset={() => {
