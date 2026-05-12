@@ -56,6 +56,13 @@ async def load_route_points(self, route_id):
     ]
 
 
+async def load_repeated_coordinate_route_points(self, route_id):
+    return [
+        RoutePoint(lat=53.0, lon=-1.0, distance_m=0.0, bearing_deg=90.0),
+        RoutePoint(lat=53.0, lon=-1.0, distance_m=1000.0, bearing_deg=90.0),
+    ]
+
+
 def test_analyze_stream_emits_partial_results_before_complete(monkeypatch):
     monkeypatch.setattr(AnalysisService, "_load_route_points", load_route_points)
     monkeypatch.setattr(
@@ -91,3 +98,34 @@ def test_analyze_stream_emits_partial_results_before_complete(monkeypatch):
     assert [event["total"] for event in partial_events] == [2, 2]
     assert [event["segments"][0]["seq"] for event in partial_events] == [0, 1]
     assert len(complete_events[0]["segments"]) == 2
+
+
+def test_analyze_stream_batches_repeated_coordinates_by_time(monkeypatch):
+    monkeypatch.setattr(
+        AnalysisService, "_load_route_points", load_repeated_coordinate_route_points
+    )
+    monkeypatch.setattr(
+        "api.app.services.analyze.get_provider",
+        lambda provider_name: StreamingForecastProvider(),
+    )
+
+    response = client.get(
+        "/api/v1/analyze",
+        params={
+            "route_id": "streaming-repeated-coordinate-route",
+            "depart": datetime(2026, 5, 12, 10, tzinfo=timezone.utc).isoformat(),
+            "provider": "test-provider",
+        },
+    )
+
+    assert response.status_code == 200
+
+    partial_events = [
+        event_data
+        for event_name, event_data in parse_sse_events(response.text)
+        if event_name == "partial"
+    ]
+
+    assert len(partial_events) == 2
+    assert [event["processed"] for event in partial_events] == [1, 2]
+    assert [event["segments"][0]["seq"] for event in partial_events] == [0, 1]

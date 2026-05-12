@@ -247,6 +247,7 @@ class AnalysisService:
                         (
                             round(sample.meta.get("lat", 0), 4),
                             round(sample.meta.get("lon", 0), 4),
+                            sample.valid_from.replace(second=0, microsecond=0),
                         )
                         for sample in wind_batch
                     }
@@ -258,6 +259,7 @@ class AnalysisService:
                         if (
                             round(forecast_point.lat, 4),
                             round(forecast_point.lon, 4),
+                            forecast_point.time_utc.replace(second=0, microsecond=0),
                         )
                         in batch_keys
                     ]

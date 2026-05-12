@@ -1,6 +1,8 @@
 import os
 
+import boto3
 import pytest
+from botocore.exceptions import ClientError
 
 
 os.environ.setdefault(
@@ -35,10 +37,31 @@ class FakeS3Storage:
         return None
 
 
+def create_real_s3_bucket():
+    from api.app.core.config import get_settings
+
+    settings = get_settings()
+    s3_client = boto3.client(
+        "s3",
+        endpoint_url=settings.s3_endpoint,
+        aws_access_key_id=settings.s3_access_key,
+        aws_secret_access_key=settings.s3_secret_key,
+    )
+
+    try:
+        s3_client.head_bucket(Bucket=settings.s3_bucket)
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "404":
+            s3_client.create_bucket(Bucket=settings.s3_bucket)
+        else:
+            raise
+
+
 @pytest.fixture(autouse=True)
 def stub_external_storage(monkeypatch):
     """Avoid requiring MinIO for default test runs."""
     if os.environ.get("AGAINST_WIND_USE_REAL_S3") == "1":
+        create_real_s3_bucket()
         return
 
     monkeypatch.setattr("api.app.services.analyze.S3Storage", FakeS3Storage)

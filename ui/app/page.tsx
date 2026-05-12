@@ -61,6 +61,7 @@ export default function Home() {
   const handleAnalysisError = (error: string) => {
     console.error('Analysis error:', error)
     setIsAnalyzing(false)
+    setAnalysisData(null)
   }
 
   // Auto-load demo route on page load
