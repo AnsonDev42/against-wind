@@ -3,6 +3,7 @@ import numpy as np
 from typing import List, Tuple, Optional
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from bisect import bisect_left
 from shapely.geometry import LineString
 from api.app.core.config import get_settings
 import logging
@@ -142,6 +143,7 @@ class GPXProcessor:
             return points
 
         updated_points = []
+        distances = [point.distance_m for point in points]
 
         for i, point in enumerate(points):
             # Find points within the window for bearing calculation
@@ -149,8 +151,8 @@ class GPXProcessor:
             end_dist = point.distance_m + window_m / 2
 
             # Find start and end points for bearing calculation
-            start_idx = self._find_distance_index(points, start_dist)
-            end_idx = self._find_distance_index(points, end_dist)
+            start_idx = self._find_distance_index(points, start_dist, distances)
+            end_idx = self._find_distance_index(points, end_dist, distances)
 
             if start_idx == end_idx:
                 # Fallback to adjacent points
@@ -193,13 +195,16 @@ class GPXProcessor:
 
         sampled_points = [points[0]]  # Always include start point
         total_distance = points[-1].distance_m
+        distances = [point.distance_m for point in points]
 
         # Sample at regular intervals
         current_target = interval_m
 
         while current_target < total_distance:
             # Find the segment containing this distance
-            interpolated_point = self._interpolate_at_distance(points, current_target)
+            interpolated_point = self._interpolate_at_distance(
+                points, current_target, distances
+            )
             if interpolated_point:
                 sampled_points.append(interpolated_point)
 
@@ -219,6 +224,7 @@ class GPXProcessor:
             return points
 
         updated_points = []
+        distances = [point.distance_m for point in points]
 
         for i, point in enumerate(points):
             if point.elevation is None:
@@ -238,8 +244,8 @@ class GPXProcessor:
             start_dist = max(0, point.distance_m - window_m / 2)
             end_dist = point.distance_m + window_m / 2
 
-            start_idx = self._find_distance_index(points, start_dist)
-            end_idx = self._find_distance_index(points, end_dist)
+            start_idx = self._find_distance_index(points, start_dist, distances)
+            end_idx = self._find_distance_index(points, end_dist, distances)
 
             if (
                 start_idx != end_idx
@@ -370,16 +376,32 @@ class GPXProcessor:
         return (bearing_deg + 360) % 360
 
     def _find_distance_index(
-        self, points: List[RoutePoint], target_distance: float
+        self,
+        points: List[RoutePoint],
+        target_distance: float,
+        distances: Optional[List[float]] = None,
     ) -> int:
         """Find index of point closest to target distance."""
-        return min(
-            range(len(points)),
-            key=lambda i: abs(points[i].distance_m - target_distance),
-        )
+        if not points:
+            return 0
+        distances = distances or [point.distance_m for point in points]
+        insert_at = bisect_left(distances, target_distance)
+        if insert_at <= 0:
+            return 0
+        if insert_at >= len(distances):
+            return len(distances) - 1
+
+        before = insert_at - 1
+        after = insert_at
+        if target_distance - distances[before] <= distances[after] - target_distance:
+            return before
+        return after
 
     def _interpolate_at_distance(
-        self, points: List[RoutePoint], distance: float
+        self,
+        points: List[RoutePoint],
+        distance: float,
+        distances: Optional[List[float]] = None,
     ) -> Optional[RoutePoint]:
         """Interpolate a point at the specified distance along the route."""
         if distance <= 0:
@@ -387,47 +409,47 @@ class GPXProcessor:
         if distance >= points[-1].distance_m:
             return points[-1]
 
-        # Find the segment containing this distance
-        for i in range(len(points) - 1):
-            if points[i].distance_m <= distance <= points[i + 1].distance_m:
-                # Linear interpolation
-                p1, p2 = points[i], points[i + 1]
+        distances = distances or [point.distance_m for point in points]
+        right_idx = bisect_left(distances, distance)
+        if right_idx <= 0:
+            return points[0]
+        if right_idx >= len(points):
+            return points[-1]
 
-                if p2.distance_m == p1.distance_m:
-                    return p1
+        p1, p2 = points[right_idx - 1], points[right_idx]
 
-                ratio = (distance - p1.distance_m) / (p2.distance_m - p1.distance_m)
+        if p2.distance_m == p1.distance_m:
+            return p1
 
-                lat = p1.lat + ratio * (p2.lat - p1.lat)
-                lon = p1.lon + ratio * (p2.lon - p1.lon)
-                elevation = None
-                if p1.elevation is not None and p2.elevation is not None:
-                    elevation = p1.elevation + ratio * (p2.elevation - p1.elevation)
+        ratio = (distance - p1.distance_m) / (p2.distance_m - p1.distance_m)
 
-                bearing = p1.bearing_deg if p1.bearing_deg is not None else 0.0
+        lat = p1.lat + ratio * (p2.lat - p1.lat)
+        lon = p1.lon + ratio * (p2.lon - p1.lon)
+        elevation = None
+        if p1.elevation is not None and p2.elevation is not None:
+            elevation = p1.elevation + ratio * (p2.elevation - p1.elevation)
 
-                # Interpolate timestamp if both points have timestamps
-                timestamp = None
-                if p1.timestamp is not None and p2.timestamp is not None:
-                    time_diff = (p2.timestamp - p1.timestamp).total_seconds()
-                    interpolated_seconds = time_diff * ratio
-                    timestamp = p1.timestamp + timedelta(seconds=interpolated_seconds)
-                elif p1.timestamp is not None:
-                    timestamp = p1.timestamp
-                elif p2.timestamp is not None:
-                    timestamp = p2.timestamp
+        bearing = p1.bearing_deg if p1.bearing_deg is not None else 0.0
 
-                return RoutePoint(
-                    lat=lat,
-                    lon=lon,
-                    elevation=elevation,
-                    distance_m=distance,
-                    bearing_deg=bearing,
-                    grade_pct=p1.grade_pct,
-                    timestamp=timestamp,
-                )
+        timestamp = None
+        if p1.timestamp is not None and p2.timestamp is not None:
+            time_diff = (p2.timestamp - p1.timestamp).total_seconds()
+            interpolated_seconds = time_diff * ratio
+            timestamp = p1.timestamp + timedelta(seconds=interpolated_seconds)
+        elif p1.timestamp is not None:
+            timestamp = p1.timestamp
+        elif p2.timestamp is not None:
+            timestamp = p2.timestamp
 
-        return None
+        return RoutePoint(
+            lat=lat,
+            lon=lon,
+            elevation=elevation,
+            distance_m=distance,
+            bearing_deg=bearing,
+            grade_pct=p1.grade_pct,
+            timestamp=timestamp,
+        )
 
     def _calculate_bbox(self, points: List[RoutePoint]) -> List[float]:
         """Calculate bounding box [min_lon, min_lat, max_lon, max_lat]."""

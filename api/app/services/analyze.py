@@ -27,6 +27,7 @@ from api.app.domain.time_estimation import (
 from api.app.geo.gpx import GPXProcessor, RoutePoint
 from api.app.geo.interp import WindInterpolator
 from api.app.providers.open_meteo import get_provider
+from api.app.core.ttl_cache import TTLCache
 from api.app.storage.db import (
     RouteDB,
     RouteSampleDB,
@@ -42,10 +43,10 @@ from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger(__name__)
 
-# In-memory cache
+# In-memory storage and bounded process-local analysis cache.
 _route_storage: Dict[str, Route] = {}
 _route_points_storage: Dict[str, List[RoutePoint]] = {}
-_analysis_cache: Dict[str, dict] = {}
+_analysis_cache = TTLCache(max_items=128, ttl_seconds=get_settings().cache_ttl_seconds)
 
 # Fixed demo route ID used by the UI
 DEMO_ROUTE_ID = "demo-glossop-sheffield"
@@ -185,8 +186,8 @@ class AnalysisService:
         try:
             # Attempt to serve from cache first
             cache_key = self._cache_key(request)
-            if cache_key in _analysis_cache:
-                cached = _analysis_cache[cache_key]
+            cached = _analysis_cache.get(cache_key)
+            if cached is not None:
                 yield ProgressEvent(
                     data={
                         "stage": "cache_hit",
@@ -427,7 +428,7 @@ class AnalysisService:
                 "timing": timing_estimate,
             }
             # Cache the completed payload
-            _analysis_cache[cache_key] = payload
+            _analysis_cache.set(cache_key, payload)
             logger.info(f"Stored results for route {request.route_id}")
             # Send a final 100% progress update before completing
             yield ProgressEvent(
@@ -879,13 +880,9 @@ class AnalysisService:
                 )
                 session.add(route_db)
 
-                # Create route sample records (calculate average speed for eta_offset_s)
                 avg_speed_kmh = 25.0  # Default cycling speed
-                for i, point in enumerate(route_points):
-                    eta_offset_s = int(
-                        (point.distance_m / 1000.0 / avg_speed_kmh) * 3600
-                    )
-                    sample_db = RouteSampleDB(
+                sample_rows = [
+                    RouteSampleDB(
                         route_id=route.id,
                         seq=i,
                         lat=point.lat,
@@ -894,9 +891,13 @@ class AnalysisService:
                         bearing_deg=point.bearing_deg or 0.0,
                         elevation_m=point.elevation,
                         grade_pct=point.grade_pct,
-                        eta_offset_s=eta_offset_s,
+                        eta_offset_s=int(
+                            (point.distance_m / 1000.0 / avg_speed_kmh) * 3600
+                        ),
                     )
-                    session.add(sample_db)
+                    for i, point in enumerate(route_points)
+                ]
+                session.add_all(sample_rows)
 
                 try:
                     await session.commit()
@@ -960,9 +961,8 @@ class AnalysisService:
                 )
                 session.add(result_db)
 
-                # Create segment wind records
-                for segment in segments:
-                    segment_db = SegmentWindDB(
+                segment_rows = [
+                    SegmentWindDB(
                         result_id=segment.result_id,
                         seq=segment.seq,
                         time_utc=segment.time_utc,
@@ -974,7 +974,9 @@ class AnalysisService:
                         gust_ms=segment.gust_ms,
                         confidence=segment.confidence,
                     )
-                    session.add(segment_db)
+                    for segment in segments
+                ]
+                session.add_all(segment_rows)
 
                 # Create summary record
                 summary_db = SummaryDB(
