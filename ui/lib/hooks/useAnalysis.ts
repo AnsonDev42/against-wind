@@ -5,6 +5,7 @@ import { AnalysisProgress, TimingMode } from '@/lib/types/analysis'
 
 interface UseAnalysisProps {
   onAnalysisStart: () => void
+  onAnalysisPartial: (data: any) => void
   onAnalysisComplete: (data: any) => void
   onAnalysisError: (error: string) => void
 }
@@ -18,7 +19,7 @@ interface PerformAnalysisParams {
   estimatedDuration: number
 }
 
-export function useAnalysis({ onAnalysisStart, onAnalysisComplete, onAnalysisError }: UseAnalysisProps) {
+export function useAnalysis({ onAnalysisStart, onAnalysisPartial, onAnalysisComplete, onAnalysisError }: UseAnalysisProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [progress, setProgress] = useState<AnalysisProgress | null>(null)
 
@@ -60,6 +61,11 @@ export function useAnalysis({ onAnalysisStart, onAnalysisComplete, onAnalysisErr
       eventSource.addEventListener('progress', (event: MessageEvent) => {
         const data = JSON.parse(event.data)
         setProgress(data)
+      })
+
+      eventSource.addEventListener('partial', (event: MessageEvent) => {
+        const data = JSON.parse(event.data)
+        onAnalysisPartial(data)
       })
 
       eventSource.addEventListener('complete', (event: MessageEvent) => {

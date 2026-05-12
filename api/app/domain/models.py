@@ -1,4 +1,4 @@
-from typing import Protocol, Optional, Dict, Any, List
+from typing import AsyncIterator, Protocol, Optional, Dict, Any, List
 from datetime import datetime
 from pydantic import BaseModel, Field
 from enum import Enum
@@ -45,12 +45,18 @@ class ForecastProvider(Protocol):
         """Check if provider supports this geographic region."""
         ...
 
-    def get_model_run_id(self) -> str:
+    async def get_model_run_id(self) -> str:
         """Get current model run identifier."""
         ...
 
-    def batch_wind(self, points: List[ForecastPoint]) -> List[WindSample]:
+    async def batch_wind(self, points: List[ForecastPoint]) -> List[WindSample]:
         """Fetch wind data for multiple points."""
+        ...
+
+    def stream_wind(
+        self, points: List[ForecastPoint]
+    ) -> AsyncIterator[List[WindSample]]:
+        """Fetch wind data incrementally in provider-defined batches."""
         ...
 
 

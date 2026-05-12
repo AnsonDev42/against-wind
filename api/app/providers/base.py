@@ -1,4 +1,4 @@
-from typing import Protocol, List
+from typing import AsyncIterator, Protocol, List
 from abc import ABC, abstractmethod
 from api.app.domain.models import ForecastPoint, WindSample
 
@@ -18,6 +18,12 @@ class ForecastProvider(Protocol):
 
     async def batch_wind(self, points: List[ForecastPoint]) -> List[WindSample]:
         """Fetch wind data for multiple points in a single batch request."""
+        ...
+
+    def stream_wind(
+        self, points: List[ForecastPoint]
+    ) -> AsyncIterator[List[WindSample]]:
+        """Fetch wind data incrementally in provider-defined batches."""
         ...
 
 
@@ -41,6 +47,14 @@ class BaseForecastProvider(ABC):
     async def batch_wind(self, points: List[ForecastPoint]) -> List[WindSample]:
         """Fetch wind data for multiple points."""
         pass
+
+    async def stream_wind(
+        self, points: List[ForecastPoint]
+    ) -> AsyncIterator[List[WindSample]]:
+        """Yield wind data incrementally. Providers can override for true streaming."""
+        samples = await self.batch_wind(points)
+        if samples:
+            yield samples
 
     def _validate_coordinates(self, lat: float, lon: float) -> bool:
         """Validate latitude and longitude ranges."""

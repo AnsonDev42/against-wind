@@ -16,6 +16,7 @@ from api.app.domain.models import (
     CompleteResultEvent,
     ErrorEvent,
     ForecastPoint,
+    PartialResultEvent,
     WindClass,
 )
 from api.app.geo.gpx import GPXProcessor, RoutePoint
@@ -234,9 +235,81 @@ class AnalysisService:
             await asyncio.sleep(0.1)
 
             provider = get_provider(request.provider)
+            wind_samples = []
+            segments = []
+            processed_segment_seqs = set()
+
             try:
-                # Update progress during fetch - await async call
-                wind_samples = await provider.batch_wind(forecast_points)
+                async for wind_batch in provider.stream_wind(forecast_points):
+                    wind_samples.extend(wind_batch)
+
+                    batch_keys = {
+                        (
+                            round(sample.meta.get("lat", 0), 4),
+                            round(sample.meta.get("lon", 0), 4),
+                            sample.valid_from.replace(second=0, microsecond=0),
+                        )
+                        for sample in wind_batch
+                    }
+                    batch_items = [
+                        (index, route_point, forecast_point)
+                        for index, (route_point, forecast_point) in enumerate(
+                            zip(route_points, forecast_points)
+                        )
+                        if (
+                            round(forecast_point.lat, 4),
+                            round(forecast_point.lon, 4),
+                            forecast_point.time_utc.replace(second=0, microsecond=0),
+                        )
+                        in batch_keys
+                    ]
+                    batch_indexes = [item[0] for item in batch_items]
+                    batch_route_points = [item[1] for item in batch_items]
+                    batch_forecast_points = [item[2] for item in batch_items]
+                    batch_segments = await self._process_wind_segments(
+                        batch_route_points,
+                        wind_batch,
+                        batch_forecast_points,
+                        batch_indexes,
+                    )
+                    new_segments = [
+                        segment
+                        for segment in batch_segments
+                        if segment.seq not in processed_segment_seqs
+                    ]
+
+                    if not new_segments:
+                        continue
+
+                    segments.extend(new_segments)
+                    processed_segment_seqs.update(
+                        segment.seq for segment in new_segments
+                    )
+                    processed_count = len(processed_segment_seqs)
+                    total_count = len(forecast_points)
+                    progress = (
+                        0.3 + (0.2 * min(processed_count / total_count, 1.0))
+                        if total_count
+                        else 0.4
+                    )
+                    summary_so_far = self._generate_summary(segments)
+
+                    yield PartialResultEvent(
+                        data={
+                            "segments": [seg.model_dump() for seg in new_segments],
+                            "summary": summary_so_far.model_dump(),
+                            "processed": processed_count,
+                            "total": total_count,
+                            "is_final": False,
+                        }
+                    )
+                    yield ProgressEvent(
+                        data={
+                            "stage": "fetching_wind_data",
+                            "progress": progress,
+                            "message": f"Processed {processed_count}/{total_count} route samples",
+                        }
+                    )
             except ValueError as e:
                 # Handle specific errors from the provider (e.g., historical data not available)
                 error_msg = str(e)
@@ -295,9 +368,10 @@ class AnalysisService:
                 }
             )
 
-            segments = await self._process_wind_segments(
-                route_points, wind_samples, forecast_points
-            )
+            if not segments:
+                segments = await self._process_wind_segments(
+                    route_points, wind_samples, forecast_points
+                )
 
             # Step 5: Generate summary
             yield ProgressEvent(
@@ -481,6 +555,7 @@ class AnalysisService:
         route_points: List[RoutePoint],
         wind_samples: List,
         forecast_points: List[ForecastPoint],
+        segment_indexes: Optional[List[int]] = None,
     ) -> List[SegmentWind]:
         """Process wind data into route segments."""
         segments = []
@@ -525,7 +600,7 @@ class AnalysisService:
 
             segment = SegmentWind(
                 result_id="",  # Will be set when storing
-                seq=i,
+                seq=segment_indexes[i] if segment_indexes else i,
                 time_utc=point_time,
                 wind_dir_deg10m=wind_direction,
                 wind_ms10m=wind_speed,

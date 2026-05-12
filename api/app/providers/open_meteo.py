@@ -1,6 +1,6 @@
-import httpx
 import asyncio
-from typing import List
+import httpx
+from typing import AsyncIterator, List
 from datetime import datetime, timezone, timedelta
 from api.app.providers.base import BaseForecastProvider
 from api.app.domain.models import ForecastPoint, WindSample
@@ -51,8 +51,17 @@ class OpenMeteoProvider(BaseForecastProvider):
 
     async def batch_wind(self, points: List[ForecastPoint]) -> List[WindSample]:
         """Fetch wind data for multiple points from Open-Meteo."""
+        wind_samples = []
+        async for batch in self.stream_wind(points):
+            wind_samples.extend(batch)
+        return wind_samples
+
+    async def stream_wind(
+        self, points: List[ForecastPoint]
+    ) -> AsyncIterator[List[WindSample]]:
+        """Fetch wind data for multiple points and yield each completed batch."""
         if not points:
-            return []
+            return
 
         # Deduplicate points to minimize API calls
         unique_points = self._deduplicate_points(points)
@@ -61,10 +70,8 @@ class OpenMeteoProvider(BaseForecastProvider):
 
         model_run_id = await self.get_model_run_id()
 
-        # Make concurrent requests with asyncio.gather for better performance
-        # Process in batches to avoid overwhelming the API
+        # Process in batches to avoid overwhelming the API.
         batch_size = 10  # Fetch 10 points concurrently
-        wind_samples = []
 
         for i in range(0, len(unique_points), batch_size):
             batch = unique_points[i : i + batch_size]
@@ -72,13 +79,10 @@ class OpenMeteoProvider(BaseForecastProvider):
                 f"Fetching batch {i//batch_size + 1}/{(len(unique_points) + batch_size - 1)//batch_size}"
             )
 
-            # Create tasks for concurrent fetching
             tasks = [self._fetch_point_wind(point, model_run_id) for point in batch]
-
-            # Execute all tasks concurrently
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            # Process results
+            batch_samples = []
             for point, result in zip(batch, results):
                 if isinstance(result, Exception):
                     logger.error(
@@ -86,13 +90,14 @@ class OpenMeteoProvider(BaseForecastProvider):
                     )
                     continue
 
-                wind_samples.extend(result)
+                batch_samples.extend(result)
                 logger.debug(
                     f"Fetched {len(result)} samples for point {point.lat:.4f}, {point.lon:.4f}"
                 )
 
-        logger.info(f"Total wind samples fetched: {len(wind_samples)}")
-        return wind_samples
+            logger.info(f"Batch returned {len(batch_samples)} wind samples")
+            if batch_samples:
+                yield batch_samples
 
     async def _fetch_point_wind(
         self, point: ForecastPoint, model_run_id: str
