@@ -8,12 +8,7 @@ import MapboxMap, {
   Popup as MapboxPopup,
   Source as MapboxSource,
 } from 'react-map-gl/mapbox'
-import MapLibreMap, {
-  Layer as MapLibreLayer,
-  NavigationControl as MapLibreNavigationControl,
-  Popup as MapLibrePopup,
-  Source as MapLibreSource,
-} from 'react-map-gl/maplibre'
+import MapLibreMap, { Layer, NavigationControl, Popup, Source } from 'react-map-gl/maplibre'
 import { useRouteData } from '@/lib/hooks/useRouteData'
 import { useMapFitBounds } from '@/lib/hooks/useMapFitBounds'
 import { WindAnalysisLegend } from '@/components/map/WindAnalysisLegend'
@@ -34,6 +29,7 @@ interface BaseMapLayer {
   icon: typeof Map
   attribution: string
   mapboxStyle: string
+  fallbackTiles: string[]
   tiles: string[]
 }
 
@@ -52,12 +48,12 @@ interface SelectedWindSegment {
 
 const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
 const MapComponent = (mapboxToken ? MapboxMap : MapLibreMap) as any
-const SourceComponent = (mapboxToken ? MapboxSource : MapLibreSource) as any
-const LayerComponent = (mapboxToken ? MapboxLayer : MapLibreLayer) as any
+const SourceComponent = (mapboxToken ? MapboxSource : Source) as any
+const LayerComponent = (mapboxToken ? MapboxLayer : Layer) as any
 const NavigationControlComponent = (
-  mapboxToken ? MapboxNavigationControl : MapLibreNavigationControl
+  mapboxToken ? MapboxNavigationControl : NavigationControl
 ) as any
-const PopupComponent = (mapboxToken ? MapboxPopup : MapLibrePopup) as any
+const PopupComponent = (mapboxToken ? MapboxPopup : Popup) as any
 
 const BASE_MAP_LAYERS: BaseMapLayer[] = [
   {
@@ -66,6 +62,7 @@ const BASE_MAP_LAYERS: BaseMapLayer[] = [
     icon: Map,
     attribution: '&copy; OpenStreetMap contributors',
     mapboxStyle: 'mapbox://styles/mapbox/outdoors-v12',
+    fallbackTiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
     tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
   },
   {
@@ -74,18 +71,21 @@ const BASE_MAP_LAYERS: BaseMapLayer[] = [
     icon: Satellite,
     attribution: 'Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community',
     mapboxStyle: 'mapbox://styles/mapbox/satellite-streets-v12',
+    fallbackTiles: [
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    ],
     tiles: [
       'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     ],
   },
 ]
 
-const createRasterStyle = (layer: BaseMapLayer) => ({
+const createRasterStyle = (layer: BaseMapLayer): any => ({
   version: 8,
   sources: {
     [layer.id]: {
       type: 'raster',
-      tiles: layer.tiles,
+      tiles: layer.tiles.length > 0 ? layer.tiles : layer.fallbackTiles,
       tileSize: 256,
       attribution: layer.attribution,
     },
@@ -318,14 +318,14 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
         <NavigationControlComponent position="top-right" showCompass={false} />
 
         {routeSource && (
-          <SourceComponent id="route" type="geojson" data={routeSource}>
+          <SourceComponent id="route" type="geojson" data={routeSource as any}>
             <LayerComponent {...routeHaloLayer} />
             <LayerComponent {...routeLayer} />
           </SourceComponent>
         )}
 
         {windSegmentsGeoJSON.features.length > 0 && (
-          <SourceComponent id="wind-segment-points" type="geojson" data={windSegmentsGeoJSON}>
+          <SourceComponent id="wind-segment-points" type="geojson" data={windSegmentsGeoJSON as any}>
             <LayerComponent {...windSegmentLayer} />
           </SourceComponent>
         )}
