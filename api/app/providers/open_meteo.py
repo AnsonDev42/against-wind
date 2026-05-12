@@ -5,9 +5,13 @@ from datetime import datetime, timezone, timedelta
 from api.app.providers.base import BaseForecastProvider
 from api.app.domain.models import ForecastPoint, WindSample
 from api.app.core.config import get_settings
+from api.app.core.ttl_cache import TTLCache
 import logging
 
 logger = logging.getLogger(__name__)
+_wind_response_cache = TTLCache(
+    max_items=2048, ttl_seconds=get_settings().cache_ttl_seconds
+)
 
 
 class OpenMeteoProvider(BaseForecastProvider):
@@ -73,34 +77,39 @@ class OpenMeteoProvider(BaseForecastProvider):
         # Process in batches to avoid overwhelming the API.
         batch_size = 10  # Fetch 10 points concurrently
 
-        for i in range(0, len(unique_points), batch_size):
-            batch = unique_points[i : i + batch_size]
-            logger.info(
-                f"Fetching batch {i//batch_size + 1}/{(len(unique_points) + batch_size - 1)//batch_size}"
-            )
-
-            tasks = [self._fetch_point_wind(point, model_run_id) for point in batch]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            batch_samples = []
-            for point, result in zip(batch, results):
-                if isinstance(result, Exception):
-                    logger.error(
-                        f"Failed to fetch wind for point {point.lat:.4f}, {point.lon:.4f}: {result}"
-                    )
-                    continue
-
-                batch_samples.extend(result)
-                logger.debug(
-                    f"Fetched {len(result)} samples for point {point.lat:.4f}, {point.lon:.4f}"
+        timeout = httpx.Timeout(max(60.0, float(self.timeout)), connect=10.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            for i in range(0, len(unique_points), batch_size):
+                batch = unique_points[i : i + batch_size]
+                logger.info(
+                    f"Fetching batch {i//batch_size + 1}/{(len(unique_points) + batch_size - 1)//batch_size}"
                 )
 
-            logger.info(f"Batch returned {len(batch_samples)} wind samples")
-            if batch_samples:
-                yield batch_samples
+                tasks = [
+                    self._fetch_point_wind(point, model_run_id, client)
+                    for point in batch
+                ]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                batch_samples = []
+                for point, result in zip(batch, results):
+                    if isinstance(result, Exception):
+                        logger.error(
+                            f"Failed to fetch wind for point {point.lat:.4f}, {point.lon:.4f}: {result}"
+                        )
+                        continue
+
+                    batch_samples.extend(result)
+                    logger.debug(
+                        f"Fetched {len(result)} samples for point {point.lat:.4f}, {point.lon:.4f}"
+                    )
+
+                logger.info(f"Batch returned {len(batch_samples)} wind samples")
+                if batch_samples:
+                    yield batch_samples
 
     async def _fetch_point_wind(
-        self, point: ForecastPoint, model_run_id: str
+        self, point: ForecastPoint, model_run_id: str, client: httpx.AsyncClient
     ) -> List[WindSample]:
         now = datetime.now(timezone.utc)
         today = now.date()
@@ -155,16 +164,33 @@ class OpenMeteoProvider(BaseForecastProvider):
                 f"Fetching ERA5 archive for {target_date} at {point.lat:.4f},{point.lon:.4f}"
             )
 
-        # Use a longer timeout for individual requests (default is 30s which might be too short)
-        # Each request should be allowed to complete, with overall batch timeout managed at higher level
-        timeout = httpx.Timeout(60.0, connect=10.0)  # 60s total, 10s connect
+        cache_key = self._wind_cache_key(api_url, params, point)
+        cached_samples = _wind_response_cache.get(cache_key)
+        if cached_samples is not None:
+            return [sample.model_copy(deep=True) for sample in cached_samples]
 
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.get(api_url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
+        resp = await client.get(api_url, params=params)
+        resp.raise_for_status()
+        data = resp.json()
 
-        return self._parse_response(data, point, model_run_id)
+        samples = self._parse_response(data, point, model_run_id)
+        _wind_response_cache.set(
+            cache_key, [sample.model_copy(deep=True) for sample in samples]
+        )
+        return samples
+
+    def _wind_cache_key(self, api_url: str, params: dict, point: ForecastPoint) -> str:
+        point_time = point.time_utc
+        if point_time.tzinfo is None:
+            point_time = point_time.replace(tzinfo=timezone.utc)
+        point_hour = point_time.replace(minute=0, second=0, microsecond=0)
+        relevant_params = "&".join(
+            f"{key}={params[key]}" for key in sorted(params) if key != "timezone"
+        )
+        return (
+            f"{api_url}:{round(point.lat, 4)}:{round(point.lon, 4)}:"
+            f"{point_hour.isoformat()}:{relevant_params}"
+        )
 
     def _parse_response(
         self, data: dict, point: ForecastPoint, model_run_id: str
