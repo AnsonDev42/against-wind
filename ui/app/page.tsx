@@ -222,7 +222,7 @@ export default function Home() {
         </div>
 
         {/* Map */}
-        <div className="min-h-[420px] flex-1 lg:min-h-0">
+        <div className="h-[420px] shrink-0 lg:h-auto lg:min-h-0 lg:flex-1 lg:shrink">
           <RouteMap
             routeId={routeId}
             analysisData={analysisData}
