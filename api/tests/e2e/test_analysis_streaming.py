@@ -98,6 +98,10 @@ def test_analyze_stream_emits_partial_results_before_complete(monkeypatch):
     assert [event["total"] for event in partial_events] == [2, 2]
     assert [event["segments"][0]["seq"] for event in partial_events] == [0, 1]
     assert len(complete_events[0]["segments"]) == 2
+    assert (
+        complete_events[0]["segments"][-1]["time_utc"]
+        == complete_events[0]["timing"]["estimated_completion_time"]
+    )
 
 
 def test_analyze_stream_batches_repeated_coordinates_by_time(monkeypatch):

@@ -10,14 +10,6 @@ export function ThemeToggle() {
 
   useEffect(() => setMounted(true), [])
 
-  // Debug logging
-  useEffect(() => {
-    if (mounted) {
-      console.log('Theme debug:', { theme, resolvedTheme })
-      console.log('HTML classes:', document.documentElement.className)
-    }
-  }, [mounted, theme, resolvedTheme])
-
   const getNextTheme = (currentTheme?: string): 'light' | 'dark' | 'system' => {
     switch (currentTheme) {
       case 'light':

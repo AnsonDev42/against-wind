@@ -1,11 +1,16 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
-from typing import Optional
+from typing import Literal, Optional
 from datetime import datetime
 import json
 import asyncio
 import uuid
 from api.app.domain.models import Route, AnalysisRequest, ErrorEvent
+from api.app.domain.time_estimation import (
+    RiderPowerProfile,
+    estimate_route_timing,
+    route_elevation_stats,
+)
 from api.app.services.analyze import AnalysisService
 import logging
 
@@ -85,18 +90,21 @@ async def get_route_metadata(route_id: str):
                 end_time = max(p.timestamp for p in timestamped_points)
 
         total_distance_km = route_points[-1].distance_m / 1000.0 if route_points else 0
+        elevation_stats = route_elevation_stats(route_points)
+        default_timing = estimate_route_timing(route_points, RiderPowerProfile())
 
         return {
             "route_id": route_id,
             "total_distance_km": total_distance_km,
             "total_points": len(route_points),
+            **elevation_stats,
             "has_timestamps": has_timestamps,
             "timestamp_coverage": timestamp_coverage,
             "start_time": start_time,
             "end_time": end_time,
-            "estimated_duration_hours": total_distance_km / 25.0
-            if total_distance_km > 0
-            else 0,  # Default 25 km/h
+            "estimated_duration_hours": default_timing.total_duration_s / 3600.0,
+            "eta_model": default_timing.model,
+            "eta_warnings": default_timing.warnings,
         }
 
     except HTTPException:
@@ -149,10 +157,20 @@ async def analyze_route(
     route_id: str = Query(..., description="Route ID to analyze"),
     depart: str = Query(..., description="Departure time in ISO format"),
     provider: str = Query("open-meteo", description="Forecast provider"),
-    speed_profile: str = Query("preset", description="Speed profile"),
-    use_gpx_timestamps: bool = Query(False, description="Use timestamps from GPX file"),
+    timing_mode: Literal["power", "manual_duration", "gpx_timestamps"] = Query(
+        "power", description="Timing mode"
+    ),
     estimated_duration_hours: Optional[float] = Query(
         None, description="Estimated duration for routes without timestamps"
+    ),
+    ftp_w_per_kg: Optional[float] = Query(
+        None, gt=0, le=10, description="Rider FTP in watts per kilogram"
+    ),
+    rider_weight_kg: Optional[float] = Query(
+        None, gt=0, le=250, description="Rider weight in kilograms"
+    ),
+    bike_weight_kg: Optional[float] = Query(
+        None, ge=0, le=80, description="Bike and kit weight in kilograms"
     ),
     use_historical_mode: bool = Query(
         False,
@@ -169,9 +187,11 @@ async def analyze_route(
             route_id=route_id,
             depart_time=depart_time,
             provider=provider,
-            speed_profile=speed_profile,
-            use_gpx_timestamps=use_gpx_timestamps,
+            timing_mode=timing_mode,
             estimated_duration_hours=estimated_duration_hours,
+            ftp_w_per_kg=ftp_w_per_kg,
+            rider_weight_kg=rider_weight_kg,
+            bike_weight_kg=bike_weight_kg,
             use_historical_mode=use_historical_mode,
         )
 

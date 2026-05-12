@@ -38,6 +38,12 @@ export function AnalysisPanel({
     setUseHistoricalMode,
     estimatedDuration,
     setEstimatedDuration,
+    ftpWattsPerKg,
+    setFtpWattsPerKg,
+    riderWeightKg,
+    setRiderWeightKg,
+    bikeWeightKg,
+    setBikeWeightKg,
   } = useRouteMetadata(routeId)
 
   const { isAnalyzing, progress, handleAnalyze } = useAnalysis({
@@ -55,14 +61,17 @@ export function AnalysisPanel({
       timingMode,
       useHistoricalMode,
       estimatedDuration,
+      ftpWattsPerKg,
+      riderWeightKg,
+      bikeWeightKg,
     })
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Wind Analysis</h3>
-        <Button onClick={onReset} variant="secondary">
+        <Button onClick={onReset} variant="secondary" className="w-full sm:w-auto">
           Upload new route
         </Button>
       </div>
@@ -99,11 +108,10 @@ export function AnalysisPanel({
           )}
         </div>
 
-        {/* Estimated Duration (only show when in estimated mode) */}
-        {timingMode === 'estimated' && (
+        {timingMode === 'manual_duration' && (
           <div>
             <label htmlFor="estimated-duration" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Estimated Duration (hours)
+              Manual Duration (hours)
             </label>
             <input
               type="number"
@@ -119,6 +127,64 @@ export function AnalysisPanel({
             {routeMetadata?.total_distance_km && (
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 Average speed: {Math.round((routeMetadata.total_distance_km / estimatedDuration) * 10) / 10} km/h
+              </p>
+            )}
+          </div>
+        )}
+
+        {timingMode === 'power' && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label htmlFor="ftp-w-per-kg" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                FTP/kg
+              </label>
+              <input
+                type="number"
+                id="ftp-w-per-kg"
+                value={ftpWattsPerKg}
+                onChange={(e) => setFtpWattsPerKg(parseFloat(e.target.value) || 2.5)}
+                min="0.5"
+                max="10"
+                step="0.1"
+                className="block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                disabled={isAnalyzing}
+              />
+            </div>
+            <div>
+              <label htmlFor="rider-weight-kg" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Rider kg
+              </label>
+              <input
+                type="number"
+                id="rider-weight-kg"
+                value={riderWeightKg}
+                onChange={(e) => setRiderWeightKg(parseFloat(e.target.value) || 75)}
+                min="30"
+                max="250"
+                step="1"
+                className="block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                disabled={isAnalyzing}
+              />
+            </div>
+            <div>
+              <label htmlFor="bike-weight-kg" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Bike kg
+              </label>
+              <input
+                type="number"
+                id="bike-weight-kg"
+                value={bikeWeightKg}
+                onChange={(e) => setBikeWeightKg(parseFloat(e.target.value) || 10)}
+                min="0"
+                max="80"
+                step="1"
+                className="block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                disabled={isAnalyzing}
+              />
+            </div>
+            {routeMetadata?.total_ascent_m !== undefined && (
+              <p className="sm:col-span-3 text-xs text-gray-500 dark:text-gray-400">
+                Climb: {Math.round(routeMetadata.total_ascent_m)} m / Descent: {Math.round(routeMetadata.total_descent_m || 0)} m
               </p>
             )}
           </div>

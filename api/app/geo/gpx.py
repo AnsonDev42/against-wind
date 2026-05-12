@@ -423,6 +423,7 @@ class GPXProcessor:
                     elevation=elevation,
                     distance_m=distance,
                     bearing_deg=bearing,
+                    grade_pct=p1.grade_pct,
                     timestamp=timestamp,
                 )
 

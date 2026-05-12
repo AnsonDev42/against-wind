@@ -1,6 +1,6 @@
 'use client'
 
-import { ClockIcon, CalendarIcon } from '@heroicons/react/24/outline'
+import { ClockIcon, CalendarIcon, BoltIcon } from '@heroicons/react/24/outline'
 import { format } from 'date-fns'
 import { RouteMetadata, TimingMode } from '@/lib/types/analysis'
 
@@ -31,14 +31,17 @@ export function TimingModeSelector({
           <input
             type="radio"
             name="timing-mode"
-            value="manual"
-            checked={timingMode === 'manual'}
+            value="power"
+            checked={timingMode === 'power'}
             onChange={(e) => setTimingMode(e.target.value as TimingMode)}
             className="mr-2"
             disabled={isAnalyzing}
           />
-          <ClockIcon className="h-4 w-4 mr-1" />
-          <span className="text-sm text-gray-800 dark:text-gray-200">Manual departure time</span>
+          <BoltIcon className="h-4 w-4 mr-1" />
+          <span className="text-sm text-gray-800 dark:text-gray-200">Power + elevation + wind</span>
+          {routeMetadata?.has_elevation === false && (
+            <span className="ml-1 text-xs text-amber-600">flat fallback</span>
+          )}
         </label>
 
         {routeMetadata?.has_timestamps && (
@@ -117,14 +120,14 @@ export function TimingModeSelector({
           <input
             type="radio"
             name="timing-mode"
-            value="estimated"
-            checked={timingMode === 'estimated'}
+            value="manual_duration"
+            checked={timingMode === 'manual_duration'}
             onChange={(e) => setTimingMode(e.target.value as TimingMode)}
             className="mr-2"
             disabled={isAnalyzing}
           />
           <ClockIcon className="h-4 w-4 mr-1" />
-          <span className="text-sm text-gray-800 dark:text-gray-200">Estimated duration</span>
+          <span className="text-sm text-gray-800 dark:text-gray-200">Manual duration</span>
         </label>
       </div>
     </div>
