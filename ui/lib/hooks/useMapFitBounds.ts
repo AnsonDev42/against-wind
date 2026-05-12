@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { MapRef } from 'react-map-gl';
+import type { MapRef } from 'react-map-gl/mapbox';
 
 export function useMapFitBounds(
   mapRef: React.RefObject<MapRef | null>,
