@@ -1,6 +1,7 @@
 'use client'
 
 import { KeyboardEvent, MouseEvent, PointerEvent, useMemo, useRef, useState } from 'react'
+import { Map, Satellite } from 'lucide-react'
 import { useRouteData } from '@/lib/hooks/useRouteData'
 import { WindAnalysisLegend } from '@/components/map/WindAnalysisLegend'
 import { WindSegmentTooltip } from '@/components/map/WindSegmentTooltip'
@@ -35,11 +36,39 @@ interface ScreenPoint {
   y: number
 }
 
+type MapLayerId = 'streets' | 'satellite'
+
+interface MapLayer {
+  id: MapLayerId
+  label: string
+  icon: typeof Map
+  attribution: string
+  getTileUrl: (zoom: number, x: number, y: number) => string
+}
+
 const VIEWPORT_WIDTH = 1000
 const VIEWPORT_HEIGHT = 700
 const TILE_SIZE = 256
 const TILE_BUFFER = 1
 const MAX_PAN_PX = 700
+
+const MAP_LAYERS: MapLayer[] = [
+  {
+    id: 'streets',
+    label: 'Streets',
+    icon: Map,
+    attribution: '© OpenStreetMap contributors',
+    getTileUrl: (zoom, x, y) => `https://tile.openstreetmap.org/${zoom}/${x}/${y}.png`,
+  },
+  {
+    id: 'satellite',
+    label: 'Satellite',
+    icon: Satellite,
+    attribution: 'Tiles © Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+    getTileUrl: (zoom, x, y) =>
+      `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${zoom}/${y}/${x}`,
+  },
+]
 
 const extractRouteCoordinates = (geoJson: any): Coordinate[] => {
   if (!geoJson) return []
@@ -137,7 +166,9 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
   const dragStartRef = useRef<{ pointerId: number; x: number; y: number; pan: ScreenPoint } | null>(null)
   const [tooltipInfo, setTooltipInfo] = useState<{ x: number; y: number; data: any } | null>(null)
   const [pan, setPan] = useState<ScreenPoint>({ x: 0, y: 0 })
+  const [mapLayerId, setMapLayerId] = useState<MapLayerId>('streets')
   const routeGeoJSON = useRouteData(routeId)
+  const mapLayer = MAP_LAYERS.find(layer => layer.id === mapLayerId) ?? MAP_LAYERS[0]
 
   const map = useMemo(() => {
     const coordinates = extractRouteCoordinates(routeGeoJSON).filter(
@@ -174,8 +205,8 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
     for (let x = minTileX; x <= maxTileX; x += 1) {
       for (let y = minTileY; y <= maxTileY; y += 1) {
         tiles.push({
-          key: `${zoom}-${x}-${y}`,
-          src: `https://tile.openstreetmap.org/${zoom}/${x}/${y}.png`,
+          key: `${mapLayer.id}-${zoom}-${x}-${y}`,
+          src: mapLayer.getTileUrl(zoom, x, y),
           left: x * TILE_SIZE - topLeft.x,
           top: y * TILE_SIZE - topLeft.y,
         })
@@ -194,7 +225,7 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
     const path = routePoints.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
 
     return { path, routePoints, tiles, toViewport }
-  }, [pan, routeGeoJSON])
+  }, [mapLayer, pan, routeGeoJSON])
 
   const windSegments = useMemo<ProjectedWindSegment[]>(() => {
     if (!map || !analysisData?.segments) return []
@@ -352,11 +383,40 @@ export function RouteMap({ routeId, analysisData, isAnalyzing }: RouteMapProps) 
               />
             ))}
           </svg>
+
+          <div
+            className="absolute right-3 top-3 z-20 flex rounded-md border border-gray-200 bg-white/95 p-1 shadow-sm backdrop-blur dark:border-gray-700 dark:bg-gray-900/90"
+            data-map-control="true"
+            aria-label="Map style"
+          >
+            {MAP_LAYERS.map(layer => {
+              const Icon = layer.icon
+              const isActive = layer.id === mapLayerId
+
+              return (
+                <button
+                  key={layer.id}
+                  type="button"
+                  className={`inline-flex h-9 items-center gap-1.5 rounded px-2.5 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 dark:focus:ring-offset-gray-900 ${
+                    isActive
+                      ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
+                      : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
+                  }`}
+                  aria-pressed={isActive}
+                  title={`Show ${layer.label.toLowerCase()} map`}
+                  onClick={() => setMapLayerId(layer.id)}
+                >
+                  <Icon className="h-4 w-4" aria-hidden="true" />
+                  <span>{layer.label}</span>
+                </button>
+              )
+            })}
+          </div>
         </>
       )}
 
-      <div className="absolute bottom-1 right-2 z-10 rounded bg-white/80 px-1.5 py-0.5 text-[10px] text-gray-700">
-        &copy; OpenStreetMap contributors
+      <div className="absolute bottom-1 right-2 z-10 max-w-[calc(100%-1rem)] rounded bg-white/80 px-1.5 py-0.5 text-[10px] text-gray-700 dark:bg-gray-900/75 dark:text-gray-200">
+        {mapLayer.attribution}
       </div>
 
       <WindSegmentTooltip tooltipInfo={tooltipInfo} onClose={() => setTooltipInfo(null)} />
