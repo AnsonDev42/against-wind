@@ -1,4 +1,5 @@
 import React from 'react';
+import { calculateWindVectorImpact, WIND_REFERENCE_SPEED_KMH } from '@/lib/analysisMetrics';
 
 interface TooltipInfo {
   x: number;
@@ -30,6 +31,9 @@ export function WindSegmentTooltip({ tooltipInfo, onClose }: WindSegmentTooltipP
   }
 
   const { x, y, data } = tooltipInfo;
+  const windImpact = calculateWindVectorImpact(Number(data.windSpeed) || 0, Number(data.yawAngle) || 0);
+  const componentLabel = windImpact.headwindComponentMs >= 0 ? 'headwind' : 'tailwind';
+  const aeroLoadPrefix = windImpact.aeroLoadDeltaPct > 0 ? '+' : '';
 
   return (
     <div
@@ -68,6 +72,18 @@ export function WindSegmentTooltip({ tooltipInfo, onClose }: WindSegmentTooltipP
             <span className="text-gray-600 dark:text-gray-300">Yaw Angle:</span>
             <span className="font-medium text-gray-900 dark:text-gray-100">{data.yawAngle?.toFixed(0)}°</span>
           </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-gray-600 dark:text-gray-300">Component:</span>
+            <span className="font-medium text-gray-900 dark:text-gray-100">
+              {Math.abs(windImpact.headwindComponentMs).toFixed(1)} m/s {componentLabel}
+            </span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-gray-600 dark:text-gray-300">Aero Load:</span>
+            <span className="font-medium text-gray-900 dark:text-gray-100">
+              {aeroLoadPrefix}{Math.round(windImpact.aeroLoadDeltaPct)}% vs no wind
+            </span>
+          </div>
           <div className="flex justify-between">
             <span className="text-gray-600 dark:text-gray-300">Confidence:</span>
             <span className="font-medium text-gray-900 dark:text-gray-100">{(data.confidence * 100)?.toFixed(0)}%</span>
@@ -75,6 +91,9 @@ export function WindSegmentTooltip({ tooltipInfo, onClose }: WindSegmentTooltipP
           <div className="flex justify-between">
             <span className="text-gray-600 dark:text-gray-300">Segment:</span>
             <span className="font-medium text-gray-900 dark:text-gray-100">#{data.seq}</span>
+          </div>
+          <div className="pt-1 text-xs text-gray-500 dark:text-gray-400">
+            Aero load estimated at {WIND_REFERENCE_SPEED_KMH} km/h.
           </div>
         </div>
 

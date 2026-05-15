@@ -7,6 +7,28 @@ import { AnalysisPanel } from '@/components/analysis/AnalysisPanel'
 import { Header } from '@/components/Header'
 import { loadDemoRoute, cacheAnalysisResults, DEMO_ROUTE_CONFIG } from '@/lib/demo'
 import { Button } from "@/components/ui/button"
+import { calculateWindImpactMetrics, WIND_REFERENCE_SPEED_KMH } from '@/lib/analysisMetrics'
+import { WindActionPlan } from '@/components/analysis/WindActionPlan'
+
+const formatWindSpeed = (speedMs: number) => `${(speedMs * 3.6).toFixed(1)} km/h`
+
+const formatSignedPercent = (value: number) => `${value > 0 ? '+' : ''}${Math.round(value)}%`
+
+const formatHeadwindComponent = (componentMs: number) => {
+  const label = componentMs >= 0 ? 'headwind' : 'tailwind'
+
+  return `${Math.abs(componentMs).toFixed(1)} m/s ${label}`
+}
+
+const formatTimingDelta = (seconds?: number) => {
+  if (!Number.isFinite(seconds)) return null
+
+  const absoluteMinutes = Math.abs(seconds || 0) / 60
+  const roundedMinutes = absoluteMinutes < 1 ? '<1' : Math.round(absoluteMinutes).toString()
+  const verb = (seconds || 0) >= 0 ? 'adds' : 'saves'
+
+  return `Wind ${verb} ${roundedMinutes} min vs no wind`
+}
 
 export default function Home() {
   const [routeId, setRouteId] = useState<string | null>(null)
@@ -111,6 +133,12 @@ export default function Home() {
     }
   }
 
+  const windImpact = calculateWindImpactMetrics(analysisData?.segments)
+  const timingDelta = formatTimingDelta(analysisData?.timing?.wind_duration_delta_s)
+  const aeroLoadTone = (windImpact?.avgAeroLoadDeltaPct || 0) >= 0
+    ? 'text-red-600 dark:text-red-400'
+    : 'text-green-600 dark:text-green-400'
+
   return (
     <div className="flex flex-col min-h-screen lg:h-screen">
       <Header />
@@ -182,6 +210,10 @@ export default function Home() {
           {analysisData && (
             <div className="flex-1 overflow-y-auto p-6 bg-white dark:bg-gray-800">
               <div className="space-y-4">
+                {windImpact && (
+                  <WindActionPlan windImpact={windImpact} timing={analysisData.timing} />
+                )}
+
                 <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                   <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Wind Summary</h3>
                   <div className="flex flex-col md:flex-row gap-3 md:gap-4 text-sm md:justify-between">
@@ -214,6 +246,56 @@ export default function Home() {
                     <p className="text-red-700 dark:text-red-300">
                       {analysisData.summary.longest_head_km.toFixed(1)} km
                     </p>
+                  </div>
+                )}
+
+                {windImpact && (
+                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <h3 className="font-medium text-gray-900 dark:text-gray-100">Speed + Resistance</h3>
+                      <span className="shrink-0 rounded bg-white px-2 py-0.5 text-[11px] text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                        {WIND_REFERENCE_SPEED_KMH} km/h ref
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="min-w-0">
+                        <div className="text-lg font-bold leading-none text-gray-900 dark:text-gray-100">
+                          {formatWindSpeed(windImpact.avgWindSpeedMs)}
+                        </div>
+                        <div className="mt-1 text-xs leading-tight text-gray-600 dark:text-gray-300">
+                          Avg rider-height wind
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-lg font-bold leading-none text-gray-900 dark:text-gray-100">
+                          {formatWindSpeed(windImpact.maxWindSpeedMs)}
+                        </div>
+                        <div className="mt-1 text-xs leading-tight text-gray-600 dark:text-gray-300">
+                          Strongest segment
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-lg font-bold leading-none text-gray-900 dark:text-gray-100">
+                          {formatHeadwindComponent(windImpact.avgHeadwindComponentMs)}
+                        </div>
+                        <div className="mt-1 text-xs leading-tight text-gray-600 dark:text-gray-300">
+                          Net route component
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <div className={`text-lg font-bold leading-none ${aeroLoadTone}`}>
+                          {formatSignedPercent(windImpact.avgAeroLoadDeltaPct)}
+                        </div>
+                        <div className="mt-1 text-xs leading-tight text-gray-600 dark:text-gray-300">
+                          Aero load vs no wind
+                        </div>
+                      </div>
+                    </div>
+                    {timingDelta && (
+                      <div className="mt-3 border-t border-gray-200 pt-3 text-sm font-medium text-gray-800 dark:border-gray-600 dark:text-gray-100">
+                        {timingDelta}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

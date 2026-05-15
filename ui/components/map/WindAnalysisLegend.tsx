@@ -1,4 +1,5 @@
 import React from 'react';
+import { calculateWindImpactMetrics } from '@/lib/analysisMetrics';
 
 interface WindAnalysisLegendProps {
   analysisData: any;
@@ -10,6 +11,7 @@ export function WindAnalysisLegend({ analysisData }: WindAnalysisLegendProps) {
   }
 
   const { summary } = analysisData;
+  const windImpact = calculateWindImpactMetrics(analysisData.segments);
 
   return (
     <div className="absolute bottom-4 left-4 rounded-lg p-4 max-w-xs bg-gray-50 dark:bg-gray-700">
@@ -38,6 +40,18 @@ export function WindAnalysisLegend({ analysisData }: WindAnalysisLegendProps) {
         </div>
       </div>
       <div className="text-xs text-gray-600 dark:text-gray-300 border-t border-gray-200 dark:border-gray-600 pt-2">
+        {windImpact && (
+          <>
+            <p>Avg speed: {(windImpact.avgWindSpeedMs * 3.6).toFixed(1)} km/h</p>
+            <p>Aero load: {windImpact.avgAeroLoadDeltaPct > 0 ? '+' : ''}{Math.round(windImpact.avgAeroLoadDeltaPct)}%</p>
+            {windImpact.hardestSection && (
+              <p>
+                Hardest: km {Math.round(windImpact.hardestSection.startKm)}
+                -{Math.round(windImpact.hardestSection.endKm)}
+              </p>
+            )}
+          </>
+        )}
         <p>Circle size = wind speed</p>
         <p>Click segments for details</p>
       </div>
