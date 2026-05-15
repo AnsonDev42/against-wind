@@ -103,6 +103,7 @@ class AnalysisRequest(BaseModel):
     route_id: str
     depart_time: datetime
     provider: str = "open-meteo"
+    sample_distance_km: float = Field(3.0, ge=1.0, le=10.0)
     timing_mode: Literal["power", "manual_duration", "gpx_timestamps"] = "power"
     estimated_duration_hours: Optional[float] = Field(None, gt=0, le=48)
     ftp_w_per_kg: Optional[float] = Field(None, gt=0, le=10)
@@ -131,6 +132,7 @@ class SegmentWind(BaseModel):
 
     result_id: str
     seq: int
+    distance_m: Optional[float] = None
     time_utc: datetime
     wind_dir_deg10m: float
     wind_ms10m: float

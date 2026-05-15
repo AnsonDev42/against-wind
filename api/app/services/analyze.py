@@ -210,13 +210,19 @@ class AnalysisService:
             route_points = await self._load_route_points(request.route_id)
             if not route_points:
                 raise ValueError(f"Route {request.route_id} not found")
+            route_points = self._resample_route_points(
+                route_points, request.sample_distance_km
+            )
 
             # Step 2: Generate forecast points
             yield ProgressEvent(
                 data={
                     "stage": "generating_forecast_points",
                     "progress": 0.2,
-                    "message": "Generating forecast points...",
+                    "message": (
+                        "Generating forecast points "
+                        f"every {request.sample_distance_km:g} km..."
+                    ),
                 }
             )
 
@@ -293,7 +299,9 @@ class AnalysisService:
                         if total_count
                         else 0.4
                     )
-                    summary_so_far = self._generate_summary(segments)
+                    summary_so_far = self._generate_summary(
+                        segments, request.sample_distance_km
+                    )
 
                     yield PartialResultEvent(
                         data={
@@ -405,7 +413,7 @@ class AnalysisService:
                 }
             )
 
-            summary = self._generate_summary(segments)
+            summary = self._generate_summary(segments, request.sample_distance_km)
 
             # Step 6: Store results
             yield ProgressEvent(
@@ -426,6 +434,7 @@ class AnalysisService:
                 "summary": summary.model_dump(),
                 "map_style_url": self._generate_map_style_url(segments),
                 "timing": timing_estimate,
+                "sample_distance_km": request.sample_distance_km,
             }
             # Cache the completed payload
             _analysis_cache.set(cache_key, payload)
@@ -472,6 +481,24 @@ class AnalysisService:
         return self._generate_power_forecast_points(
             route_points, request.depart_time, request
         )
+
+    def _resample_route_points(
+        self, route_points: List[RoutePoint], sample_distance_km: float
+    ) -> List[RoutePoint]:
+        """Return route points spaced at the requested wind sampling interval."""
+        if not route_points or len(route_points) < 2:
+            return route_points
+
+        sampled_points = self.gpx_processor.sample_route(
+            route_points, interval_km=sample_distance_km
+        )
+        logger.info(
+            "Resampled route from %s to %s points at %.1f km spacing",
+            len(route_points),
+            len(sampled_points),
+            sample_distance_km,
+        )
+        return sampled_points
 
     def _forecast_points_from_gpx_timestamps(
         self,
@@ -725,6 +752,7 @@ class AnalysisService:
             segment = SegmentWind(
                 result_id="",  # Will be set when storing
                 seq=segment_indexes[i] if segment_indexes else i,
+                distance_m=point.distance_m,
                 time_utc=point_time,
                 wind_dir_deg10m=wind_direction,
                 wind_ms10m=wind_speed,
@@ -740,25 +768,46 @@ class AnalysisService:
 
         return segments
 
-    def _generate_summary(self, segments: List[SegmentWind]) -> AnalysisSummary:
+    def _generate_summary(
+        self, segments: List[SegmentWind], sample_distance_km: float = 1.0
+    ) -> AnalysisSummary:
         """Generate analysis summary from segments."""
         if not segments:
             return AnalysisSummary(
                 result_id="", head_pct=0, tail_pct=0, cross_pct=0, longest_head_km=0
             )
 
-        # Calculate percentages
-        total_segments = len(segments)
-        head_count = sum(1 for seg in segments if seg.wind_class == WindClass.HEAD)
-        tail_count = sum(1 for seg in segments if seg.wind_class == WindClass.TAIL)
-        cross_count = sum(1 for seg in segments if seg.wind_class == WindClass.CROSS)
+        segment_spans = self._segment_spans_km(segments, sample_distance_km)
+        total_distance_km = sum(length_km for _, length_km in segment_spans)
 
-        head_pct = (head_count / total_segments) * 100
-        tail_pct = (tail_count / total_segments) * 100
-        cross_pct = (cross_count / total_segments) * 100
+        if total_distance_km <= 0:
+            return AnalysisSummary(
+                result_id="", head_pct=0, tail_pct=0, cross_pct=0, longest_head_km=0
+            )
+
+        # Calculate distance-weighted percentages.
+        head_km = sum(
+            length_km
+            for segment, length_km in segment_spans
+            if segment.wind_class == WindClass.HEAD
+        )
+        tail_km = sum(
+            length_km
+            for segment, length_km in segment_spans
+            if segment.wind_class == WindClass.TAIL
+        )
+        cross_km = sum(
+            length_km
+            for segment, length_km in segment_spans
+            if segment.wind_class == WindClass.CROSS
+        )
+
+        head_pct = (head_km / total_distance_km) * 100
+        tail_pct = (tail_km / total_distance_km) * 100
+        cross_pct = (cross_km / total_distance_km) * 100
 
         # Calculate longest headwind section
-        longest_head_km = self._calculate_longest_headwind(segments)
+        longest_head_km = self._calculate_longest_headwind(segment_spans)
 
         return AnalysisSummary(
             result_id="",
@@ -768,17 +817,55 @@ class AnalysisService:
             longest_head_km=longest_head_km,
         )
 
-    def _calculate_longest_headwind(self, segments: List[SegmentWind]) -> float:
-        """Calculate longest continuous headwind section in km."""
-        longest = 0
-        current = 0
+    def _segment_spans_km(
+        self, segments: List[SegmentWind], sample_distance_km: float
+    ) -> List[tuple[SegmentWind, float]]:
+        """Estimate the route distance represented by each wind sample."""
+        if not segments:
+            return []
 
-        for segment in segments:
+        ordered_segments = sorted(
+            segments,
+            key=lambda segment: (
+                segment.distance_m is None,
+                segment.distance_m if segment.distance_m is not None else segment.seq,
+            ),
+        )
+
+        if len(ordered_segments) == 1:
+            return [(ordered_segments[0], sample_distance_km)]
+
+        spans = []
+        for index, segment in enumerate(ordered_segments):
+            if (
+                segment.distance_m is not None
+                and index < len(ordered_segments) - 1
+                and ordered_segments[index + 1].distance_m is not None
+            ):
+                next_distance_m = ordered_segments[index + 1].distance_m or 0.0
+                span_km = max(next_distance_m - segment.distance_m, 0.0) / 1000.0
+            elif segment.distance_m is not None:
+                span_km = 0.0
+            else:
+                span_km = sample_distance_km
+
+            spans.append((segment, span_km))
+
+        return spans
+
+    def _calculate_longest_headwind(
+        self, segment_spans: List[tuple[SegmentWind, float]]
+    ) -> float:
+        """Calculate longest continuous headwind section in km."""
+        longest = 0.0
+        current = 0.0
+
+        for segment, span_km in segment_spans:
             if segment.wind_class == WindClass.HEAD:
-                current += 1  # Each segment represents ~1km
+                current += span_km
             else:
                 longest = max(longest, current)
-                current = 0
+                current = 0.0
 
         longest = max(longest, current)  # Check final section
         return float(longest)
@@ -1009,6 +1096,7 @@ class AnalysisService:
         )
         rider_key = (
             f"{request.timing_mode}:"
+            f"{request.sample_distance_km}:"
             f"{request.estimated_duration_hours}:"
             f"{request.ftp_w_per_kg}:"
             f"{request.rider_weight_kg}:"
