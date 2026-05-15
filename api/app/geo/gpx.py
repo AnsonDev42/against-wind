@@ -415,6 +415,8 @@ class GPXProcessor:
             return points[0]
         if right_idx >= len(points):
             return points[-1]
+        if distances[right_idx] == distance:
+            return points[right_idx]
 
         p1, p2 = points[right_idx - 1], points[right_idx]
 

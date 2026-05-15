@@ -157,6 +157,12 @@ async def analyze_route(
     route_id: str = Query(..., description="Route ID to analyze"),
     depart: str = Query(..., description="Departure time in ISO format"),
     provider: str = Query("open-meteo", description="Forecast provider"),
+    sample_distance_km: float = Query(
+        3.0,
+        ge=1.0,
+        le=10.0,
+        description="Distance between wind forecast samples in kilometres",
+    ),
     timing_mode: Literal["power", "manual_duration", "gpx_timestamps"] = Query(
         "power", description="Timing mode"
     ),
@@ -187,6 +193,7 @@ async def analyze_route(
             route_id=route_id,
             depart_time=depart_time,
             provider=provider,
+            sample_distance_km=sample_distance_km,
             timing_mode=timing_mode,
             estimated_duration_hours=estimated_duration_hours,
             ftp_w_per_kg=ftp_w_per_kg,

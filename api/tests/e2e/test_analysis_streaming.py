@@ -56,6 +56,15 @@ async def load_route_points(self, route_id):
     ]
 
 
+async def load_resample_route_points(self, route_id):
+    return [
+        RoutePoint(lat=53.0, lon=-1.0, distance_m=0.0, bearing_deg=90.0),
+        RoutePoint(lat=53.01, lon=-1.01, distance_m=1000.0, bearing_deg=90.0),
+        RoutePoint(lat=53.02, lon=-1.02, distance_m=2000.0, bearing_deg=90.0),
+        RoutePoint(lat=53.03, lon=-1.03, distance_m=3000.0, bearing_deg=90.0),
+    ]
+
+
 async def load_repeated_coordinate_route_points(self, route_id):
     return [
         RoutePoint(lat=53.0, lon=-1.0, distance_m=0.0, bearing_deg=90.0),
@@ -102,6 +111,54 @@ def test_analyze_stream_emits_partial_results_before_complete(monkeypatch):
         complete_events[0]["segments"][-1]["time_utc"]
         == complete_events[0]["timing"]["estimated_completion_time"]
     )
+
+
+def test_analyze_stream_respects_sample_distance(monkeypatch):
+    monkeypatch.setattr(AnalysisService, "_load_route_points", load_resample_route_points)
+    monkeypatch.setattr(
+        "api.app.services.analyze.get_provider",
+        lambda provider_name: StreamingForecastProvider(),
+    )
+
+    response = client.get(
+        "/api/v1/analyze",
+        params={
+            "route_id": "streaming-resample-route",
+            "depart": datetime(2026, 5, 12, 10, tzinfo=timezone.utc).isoformat(),
+            "provider": "test-provider",
+            "sample_distance_km": 2,
+        },
+    )
+
+    assert response.status_code == 200
+
+    complete_events = [
+        event_data
+        for event_name, event_data in parse_sse_events(response.text)
+        if event_name == "complete"
+    ]
+
+    assert len(complete_events) == 1
+    assert complete_events[0]["sample_distance_km"] == 2.0
+    assert [segment["distance_m"] for segment in complete_events[0]["segments"]] == [
+        0.0,
+        2000.0,
+        3000.0,
+    ]
+
+
+def test_analyze_rejects_sample_distance_outside_slider_range():
+    response = client.get(
+        "/api/v1/analyze",
+        params={
+            "route_id": "streaming-test-route",
+            "depart": datetime(2026, 5, 12, 10, tzinfo=timezone.utc).isoformat(),
+            "provider": "test-provider",
+            "sample_distance_km": 11,
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_analyze_stream_batches_repeated_coordinates_by_time(monkeypatch):

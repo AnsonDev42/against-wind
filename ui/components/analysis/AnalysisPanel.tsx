@@ -27,6 +27,7 @@ export function AnalysisPanel({
   onReset 
 }: AnalysisPanelProps) {
   const [provider, setProvider] = useState('open-meteo')
+  const [sampleDistanceKm, setSampleDistanceKm] = useState(3)
 
   const {
     routeMetadata,
@@ -64,8 +65,25 @@ export function AnalysisPanel({
       ftpWattsPerKg,
       riderWeightKg,
       bikeWeightKg,
+      sampleDistanceKm,
     })
   }
+
+  const updateSampleDistance = (value: string) => {
+    setSampleDistanceKm(parseInt(value, 10))
+  }
+
+  const estimatedSampleCount = routeMetadata?.total_distance_km
+    ? Math.max(2, Math.ceil(routeMetadata.total_distance_km / sampleDistanceKm) + 1)
+    : null
+  const estimatedDurationHours = timingMode === 'manual_duration'
+    ? estimatedDuration
+    : routeMetadata?.estimated_duration_hours ?? estimatedDuration
+  const departDate = new Date(departTime)
+  const estimatedCompletionTime =
+    Number.isFinite(departDate.getTime()) && estimatedDurationHours > 0
+      ? new Date(departDate.getTime() + estimatedDurationHours * 60 * 60 * 1000)
+      : null
 
   return (
     <div className="space-y-4">
@@ -158,7 +176,7 @@ export function AnalysisPanel({
                 type="number"
                 id="rider-weight-kg"
                 value={riderWeightKg}
-                onChange={(e) => setRiderWeightKg(parseFloat(e.target.value) || 75)}
+                onChange={(e) => setRiderWeightKg(parseFloat(e.target.value) || 65)}
                 min="30"
                 max="250"
                 step="1"
@@ -174,7 +192,7 @@ export function AnalysisPanel({
                 type="number"
                 id="bike-weight-kg"
                 value={bikeWeightKg}
-                onChange={(e) => setBikeWeightKg(parseFloat(e.target.value) || 10)}
+                onChange={(e) => setBikeWeightKg(parseFloat(e.target.value) || 9)}
                 min="0"
                 max="80"
                 step="1"
@@ -205,6 +223,38 @@ export function AnalysisPanel({
           </select>
         </div>
 
+        <div>
+          <div className="flex items-center justify-between gap-3 mb-1">
+            <label htmlFor="sample-distance" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Wind sample spacing
+            </label>
+            <span className="shrink-0 text-sm font-semibold text-gray-900 dark:text-gray-100">
+              {sampleDistanceKm} km
+            </span>
+          </div>
+          <input
+            type="range"
+            id="sample-distance"
+            value={sampleDistanceKm}
+            onInput={(e) => updateSampleDistance(e.currentTarget.value)}
+            onChange={(e) => updateSampleDistance(e.currentTarget.value)}
+            min="1"
+            max="10"
+            step="1"
+            className="block w-full accent-blue-600"
+            disabled={isAnalyzing}
+          />
+          <div className="mt-1 flex justify-between text-xs text-gray-500 dark:text-gray-400">
+            <span>1 km denser</span>
+            <span>10 km faster</span>
+          </div>
+          {estimatedSampleCount !== null && (
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              About {estimatedSampleCount} wind forecast points for this route.
+            </p>
+          )}
+        </div>
+
         <button
           onClick={triggerAnalysis}
           disabled={isAnalyzing}
@@ -229,6 +279,9 @@ export function AnalysisPanel({
       <div className="text-xs text-gray-500 dark:text-gray-400">
         <p>Route ID: {routeId}</p>
         <p>Departure: {format(new Date(departTime), 'PPpp')}</p>
+        {estimatedCompletionTime && (
+          <p>Estimated completion: {format(estimatedCompletionTime, 'PPpp')}</p>
+        )}
       </div>
     </div>
   )

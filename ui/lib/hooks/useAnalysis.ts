@@ -20,6 +20,7 @@ interface PerformAnalysisParams {
   ftpWattsPerKg: number
   riderWeightKg: number
   bikeWeightKg: number
+  sampleDistanceKm: number
 }
 
 export function useAnalysis({ onAnalysisStart, onAnalysisPartial, onAnalysisComplete, onAnalysisError }: UseAnalysisProps) {
@@ -36,6 +37,7 @@ export function useAnalysis({ onAnalysisStart, onAnalysisPartial, onAnalysisComp
     ftpWattsPerKg,
     riderWeightKg,
     bikeWeightKg,
+    sampleDistanceKm,
   }: PerformAnalysisParams) => {
     onAnalysisStart()
     setIsAnalyzing(true)
@@ -48,6 +50,7 @@ export function useAnalysis({ onAnalysisStart, onAnalysisPartial, onAnalysisComp
         route_id: routeId,
         depart: departISO,
         provider: provider,
+        sample_distance_km: sampleDistanceKm.toString(),
         timing_mode: timingMode,
         use_historical_mode: (useHistoricalMode && timingMode === 'gpx_timestamps').toString(),
       })

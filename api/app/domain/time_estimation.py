@@ -12,8 +12,8 @@ from api.app.geo.gpx import RoutePoint
 @dataclass(frozen=True)
 class RiderPowerProfile:
     ftp_w_per_kg: float = 2.5
-    rider_weight_kg: float = 75.0
-    bike_weight_kg: float = 10.0
+    rider_weight_kg: float = 65.0
+    bike_weight_kg: float = 9.0
     cda: float = 0.32
     crr: float = 0.005
     air_density_kg_m3: float = 1.225

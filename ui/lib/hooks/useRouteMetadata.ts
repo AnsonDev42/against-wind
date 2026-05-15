@@ -15,8 +15,8 @@ export function useRouteMetadata(routeId: string) {
   const [useHistoricalMode, setUseHistoricalMode] = useState<boolean>(false)
   const [estimatedDuration, setEstimatedDuration] = useState<number>(3)
   const [ftpWattsPerKg, setFtpWattsPerKg] = useState<number>(2.5)
-  const [riderWeightKg, setRiderWeightKg] = useState<number>(75)
-  const [bikeWeightKg, setBikeWeightKg] = useState<number>(10)
+  const [riderWeightKg, setRiderWeightKg] = useState<number>(65)
+  const [bikeWeightKg, setBikeWeightKg] = useState<number>(9)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(false)
 

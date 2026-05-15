@@ -10,6 +10,7 @@ export interface RouteMetadata {
   eta_model?: string;
   eta_warnings?: string[];
   total_distance_km?: number;
+  total_points?: number;
 }
 
 export type TimingMode = 'power' | 'manual_duration' | 'gpx_timestamps';
