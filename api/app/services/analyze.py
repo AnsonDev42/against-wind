@@ -229,6 +229,7 @@ class AnalysisService:
             forecast_points, timing_estimate = self._build_initial_timing(
                 route_points, request
             )
+            no_wind_timing_estimate = dict(timing_estimate)
 
             # Step 3: Fetch wind data
             yield ProgressEvent(
@@ -403,6 +404,10 @@ class AnalysisService:
                 segments = await self._process_wind_segments(
                     route_points, wind_samples, forecast_points
                 )
+
+            timing_estimate = self._add_no_wind_timing_comparison(
+                timing_estimate, no_wind_timing_estimate, request.timing_mode
+            )
 
             # Step 5: Generate summary
             yield ProgressEvent(
@@ -700,6 +705,35 @@ class AnalysisService:
             "estimated_completion_time": completion_time,
             "warnings": warnings,
         }
+
+    def _add_no_wind_timing_comparison(
+        self, timing_estimate: dict, no_wind_timing_estimate: dict, timing_mode: str
+    ) -> dict:
+        """Attach a calm-air timing comparison when the power model is in use."""
+        if timing_mode != "power":
+            return timing_estimate
+
+        no_wind_duration_hours = no_wind_timing_estimate.get(
+            "estimated_duration_hours"
+        )
+        wind_duration_hours = timing_estimate.get("estimated_duration_hours")
+        if not no_wind_duration_hours or wind_duration_hours is None:
+            return timing_estimate
+
+        delta_seconds = (wind_duration_hours - no_wind_duration_hours) * 3600.0
+        comparison = {
+            "no_wind_estimated_duration_hours": no_wind_duration_hours,
+            "no_wind_estimated_completion_time": no_wind_timing_estimate.get(
+                "estimated_completion_time"
+            ),
+            "wind_duration_delta_s": delta_seconds,
+            "wind_duration_delta_minutes": delta_seconds / 60.0,
+            "wind_duration_delta_pct": (
+                delta_seconds / (no_wind_duration_hours * 3600.0)
+            )
+            * 100.0,
+        }
+        return {**timing_estimate, **comparison}
 
     async def _process_wind_segments(
         self,
